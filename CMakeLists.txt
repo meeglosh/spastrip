@@ -188,6 +188,7 @@ if(SPASTRIP_BUILD_TESTS)
         PRIVATE
             SPAStripFactoryData
             juce::juce_audio_utils
+            juce::juce_cryptography   # tests only: SHA-256 of the embedded FLACs vs the manifest
             juce::juce_dsp
         PUBLIC
             juce::juce_recommended_config_flags

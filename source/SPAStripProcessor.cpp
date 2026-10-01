@@ -292,7 +292,8 @@ void SPAStripProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     detector.prepare (sampleRate);
     listenSmoothed.reset (sampleRate, 0.01);
     listenSmoothed.setCurrentAndTargetValue (0.0f);
-    modOffsetsApplied = false;
+    clearModOffsets();
+    slotSmoothed.fill (0.0f);
 
     // Dry ring: must hold the largest latency (limiter lookahead 1.5 ms plus
     // the oversampler's own few samples) with headroom.

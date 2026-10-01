@@ -47,7 +47,7 @@ struct Telemetry
     std::array<std::atomic<float>, limiterHistory> limGrDb {};
     std::atomic<int> limWrite { 0 };
 
-    // Sidechain / modulation matrix (SPAStrip phase 2), published once per
+    // SPAStripAdded (phase 2): sidechain / modulation matrix, published once per
     // chunk. scEnvelope: the detector output, 0..1. scPresent: a signal source
     // exists for the detector (sc.source = Input, or External with the host's
     // sidechain bus enabled); false = the UI should show "no sidechain signal

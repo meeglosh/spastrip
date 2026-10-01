@@ -153,7 +153,7 @@ public:
 
     static constexpr int kStateVersion = 1;
     static constexpr int kDefaultModUpdateInterval = 8;
-    static constexpr float kDefaultModSmoothingMs = 2.0f;
+    static constexpr float kDefaultModSmoothingMs = 4.0f;
     static constexpr double kMaxIRSeconds = 10.0;   // same cap as SPASynth
 
 private:

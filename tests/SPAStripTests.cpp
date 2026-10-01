@@ -4,7 +4,10 @@
 // convolution IR), latency / dry-wet alignment under oversampling, bypass,
 // bus layouts, tempo, the non-finite safety net and a long all-effects soak.
 
+#include <algorithm>
+#include <array>
 #include <cstdlib>
+#include <functional>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -12,9 +15,14 @@
 #include <set>
 #include <vector>
 
+#include <juce_cryptography/juce_cryptography.h>
+
 #include "SPAStripProcessor.h"
 #include "dsp/FXChain.h"
 #include "params/ParameterRegistry.h"
+#include "mod/ModTargets.h"
+
+#include <SPAStripFactoryData.h>
 
 #include "reference/GlitchMultiband.h"
 
@@ -111,6 +119,16 @@ namespace
             im += x[i] * std::sin (a);
         }
         return 2.0 * std::sqrt (re * re + im * im) / (double) (to - from);
+    }
+
+    // Goertzel amplitude over a whole number of cycles (>= minSeconds long) starting at `from`,
+    // so the estimate does not depend on the signal's phase at the window edges (matters when
+    // the in and out signals are offset by a latency).
+    double toneAmpCycles (const std::vector<float>& x, size_t from, double sr, double hz, double minSeconds = 0.25)
+    {
+        const double k = std::max (1.0, std::floor (minSeconds * hz));
+        const size_t len = (size_t) std::llround (k * sr / hz);
+        return toneAmp (x, from, std::min (x.size(), from + len), sr, hz);
     }
 
     bool allFinite (const juce::AudioBuffer<float>& b)
@@ -709,13 +727,13 @@ namespace
 
                 // mix 0.5: sines through (wet + latency-aligned dry)/2. If dry
                 // and wet were misaligned this would comb-filter; instead the
-                // gain stays ~1 across the band.
+                // gain stays ~1 across the band (20 Hz - 18 kHz).
                 setParam (*proc, pid::mix, 0.5f);
                 double worstDb = 0.0;
                 juce::String worstAt;
-                for (double hz : { 100.0, 440.0, 1000.0, 3000.0, 5000.0, 8000.0, 12000.0 })
+                for (double hz : { 20.0, 100.0, 440.0, 1000.0, 3000.0, 5000.0, 8000.0, 12000.0, 16000.0, 18000.0 })
                 {
-                    if (hz > sr * 0.3) continue;
+                    if (hz > sr * 0.45) continue;
                     std::vector<float> in, out;
                     const int total = (int) (sr * 0.6);
                     juce::AudioBuffer<float> b (2, block);
@@ -731,11 +749,14 @@ namespace
                         for (int i = 0; i < block; ++i) out.push_back (b.getSample (0, i));
                     }
                     const size_t from = (size_t) (sr * 0.3);
-                    const double gainDb = 20.0 * std::log10 (toneAmp (out, from, out.size(), sr, hz) / toneAmp (in, from, in.size(), sr, hz));
+                    const double gainDb = 20.0 * std::log10 (toneAmpCycles (out, from, sr, hz) / toneAmpCycles (in, from, sr, hz));
                     if (std::abs (gainDb) > std::abs (worstDb)) { worstDb = gainDb; worstAt = juce::String (hz, 0) + " Hz"; }
                 }
                 std::cout << "  " << tag << "mix 0.5 worst gain deviation " << juce::String (worstDb, 3) << " dB at " << worstAt << "\n";
-                expect (std::abs (worstDb) < (factor == 1 ? 0.001 : 1.0), tag + "mix 0.5 does not comb-filter (|gain error| " + juce::String (std::abs (worstDb), 3) + " dB, limit " + (factor == 1 ? "0.001" : "1.0") + " dB)");
+                // Oversampled: the dry signal takes its own trip through an identical
+                // oversampler, so dry and wet share one phase response (phase 1 only
+                // delayed the dry by an integer and dipped up to ~0.5 dB at 8-12 kHz).
+                expect (std::abs (worstDb) < (factor == 1 ? 0.001 : 0.05), tag + "mix 0.5 does not comb-filter (|gain error| " + juce::String (std::abs (worstDb), 4) + " dB, limit " + (factor == 1 ? "0.001" : "0.05") + " dB)");
                 setParam (*proc, pid::mix, 1.0f);
             }
         }
@@ -1029,6 +1050,63 @@ namespace
             malloc_logger = nullptr;
             expect (g_allocCount.load() == 0, juce::String (1 << factorChoice) + "x, " + (bypassed ? "bypassed" : "processing") + ": 200 blocks with all effects on performed no heap allocation (" + juce::String ((juce::int64) g_allocCount.load()) + " allocations seen)");
         }
+        // Phase 2: sidechain detector + eight active slots (External bus, and the
+        // Input source with sc.listen toggled on and off), every effect on, all three
+        // oversampling factors, with the sidechain bus enabled.
+        for (int factorChoice = 0; factorChoice < 3; ++factorChoice)
+        for (int variant = 0; variant < 3; ++variant)   // 0 external, 1 input source, 2 external + listen
+        {
+            auto proc = makeProc (48000.0, 256, 2, 2, 2);
+            setAllEffects (*proc, true);
+            setParam (*proc, pid::oversampling, (float) factorChoice);
+            setParam (*proc, pid::mix, 0.5f);
+            setParam (*proc, pid::fx::limLookahead, 1.0f);
+            setParam (*proc, pid::sc::source, variant == 1 ? 1.0f : 0.0f);
+            setParam (*proc, pid::sc::attack, 0.5f);
+            const auto& targets = Proc::getModTargets();
+            for (int slot = 0; slot < 8; ++slot)
+            {
+                proc->setModSlotTarget (slot, targets[(size_t) ((slot * 19 + 3) % (int) targets.size())].id);
+                setParam (*proc, pid::modSlotDepth (slot), slot % 2 == 0 ? 0.7f : -0.5f);
+            }
+            juce::AudioBuffer<float> buf (4, 256);
+            juce::MidiBuffer midi;
+            Noise nz (6);
+            long pos = 0;
+            const auto fill = [&]
+            {
+                for (int i = 0; i < 256; ++i, ++pos)
+                {
+                    const float gate = (pos / 3000) % 2 == 0 ? 1.0f : 0.1f;
+                    for (int c = 0; c < 4; ++c) buf.setSample (c, i, c < 2 ? 0.3f * nz.next() : gate * 0.8f * nz.next());
+                }
+            };
+            fill();
+            proc->processBlock (buf, midi);
+            proc->serviceMessageThread();
+            for (int i = 0; i < 30; ++i) { fill(); proc->processBlock (buf, midi); }
+
+            malloc_logger = spaStripMallocLogger;
+            g_allocCount = 0;
+            g_countAllocs = true;
+            for (int i = 0; i < 200; ++i)
+            {
+                if (i % 50 == 25)   // automation / listen toggles arrive on another thread; keep them out of the count
+                {
+                    g_countAllocs = false;
+                    setParam (*proc, pid::modSlotDepth (1), 0.2f + 0.003f * (float) i);
+                    setParam (*proc, pid::sc::gain, (float) (i % 7));
+                    if (variant == 2) setParam (*proc, pid::sc::listen, (i / 50) % 2 == 0 ? 1.0f : 0.0f);
+                    g_countAllocs = true;
+                }
+                fill();
+                proc->processBlock (buf, midi);
+            }
+            g_countAllocs = false;
+            malloc_logger = nullptr;
+            expect (g_allocCount.load() == 0, juce::String (1 << factorChoice) + "x, " + (variant == 0 ? "external sidechain" : variant == 1 ? "input source" : "external + listen toggling")
+                    + ", 8 active slots, all effects on: 200 blocks performed no heap allocation (" + juce::String ((juce::int64) g_allocCount.load()) + " allocations seen)");
+        }
        #else
         std::cout << "  (skipped: allocation hook is macOS-only)\n";
        #endif
@@ -1143,7 +1221,7 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    // Diagnostics: `SPAStripTests --audit-mod [id-substring] [sampleRate]` prints the
+    // Diagnostics: `SPAStripTests --audit-mod [id-substring] [sampleRate] [envelopeHz] [square] [slewMs] [interval]` prints the
     // modulation-target zipper audit instead of running the suite.
     if (argc >= 2 && juce::String (argv[1]) == "--bench-mod")
     {
@@ -1155,6 +1233,8 @@ int main (int argc, char** argv)
         phase2Tests::AuditConfig cfg;
         cfg.envHz = argc >= 5 ? juce::String (argv[4]).getDoubleValue() : 1.0;
         cfg.square = argc >= 6 && juce::String (argv[5]) == "square";
+        if (argc >= 7) cfg.shipSmoothMs = (float) juce::String (argv[6]).getDoubleValue();   // what-if for the "shipping default" column
+        if (argc >= 8) cfg.shipInterval = juce::String (argv[7]).getIntValue();
         phase2Tests::auditModTargets (argc >= 3 ? juce::String (argv[2]) : juce::String(),
                                       argc >= 4 ? juce::String (argv[3]).getDoubleValue() : 48000.0, cfg);
         return 0;
@@ -1201,6 +1281,26 @@ int main (int argc, char** argv)
     RUN (tempoTest);
     RUN (nonFiniteTest);
     RUN (processorBasicsTest);
+
+    // --- Phase 2a: sidechain / modulation matrix / dry-wet / factory IRs ------
+    RUN (phase2Tests::sidechainParamsTest);
+    RUN (phase2Tests::sidechainEnvelopeTimingTest);
+    RUN (phase2Tests::externalBusDisabledTest);
+    RUN (phase2Tests::slotChangesOutputTest);
+    RUN (phase2Tests::depthSignAndSumTest);
+    RUN (phase2Tests::modTargetApiTest);
+    RUN (phase2Tests::modStateTest);
+    RUN (phase2Tests::sidechainListenTest);
+    RUN (phase2Tests::sidechainBusAliasingTest);
+    RUN (phase2Tests::modRefreshTest);
+    RUN (phase2Tests::modZipperTest);
+    RUN (phase2Tests::modAllTargetsSmokeTest);
+    RUN (phase2Tests::modulationSoakTest);
+    RUN (phase2Tests::mixFlatnessOversampledTest);
+    RUN (phase2Tests::factoryIRTableTest);
+    RUN (phase2Tests::karlskircheAssetTest);
+    RUN (phase2Tests::factoryIRLoadTest);
+    RUN (phase2Tests::factoryIRStateTest);
 #undef RUN
 
     std::cout << "\n========================================\n"
