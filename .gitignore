@@ -1,0 +1,24 @@
+# Build trees
+build/
+build-*/
+cmake-build-*/
+out/
+Builds/
+.cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.vs/
+*.xcodeproj/
+xcuserdata/
+.DS_Store
+
+# Source IR downloads (kept locally; hashes are in assets/irs/manifest.json)
+assets/irs/original/
+
+# Packaging / signing material (never commit)
+dist/
+*.cer
+*.p12
+*.certSigningRequest
