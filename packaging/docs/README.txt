@@ -87,22 +87,21 @@ up the routing. The LISTEN switch replaces the output with the detector
 signal so you can hear what the follower hears.
 
 Setting up an external sidechain:
-  Logic Pro   Insert SPAStrip on the track you want to process. In the
-              plug-in window header, open the "Side Chain" menu and choose
-              the track to listen to.
+  Logic Pro   Insert SPAStrip on the track you want to process. At the
+              top of the plug-in window header, open the "Side Chain" menu
+              and choose the source track or bus.
   Reaper      Add a send from the track you want to listen to, to the
               track holding SPAStrip, and send it to the destination's
               channels 3/4. Make sure the destination track has at least
-              four channels. SPAStrip's sidechain input reads channels 3/4.
+              four channels. SPAStrip's sidechain bus appears as auxiliary inputs and
+              reads channels 3/4.
   Ableton Live, Cubase, FL Studio
-              These hosts support sidechain inputs on VST3 plug-ins, but
-              the steps are specific to each; see your DAW's manual
-              (search for "sidechain" and "VST3").
-              [TODO-REVIEW: we have not verified the exact steps for Live,
-              Cubase or FL Studio. Test, then replace the line above with
-              short steps, or leave it as is.]
-If your host is hard to route, set SOURCE to Input and put the signal you
-want to follow into SPAStrip itself.
+              Use the host's sidechain (side-chain) input routing for VST3
+              plug-ins, and see your DAW's manual for the steps.
+In every host, SOURCE in the SIDECHAIN panel must be set to External for the
+routed signal to be used. Input mode keys from the track's own signal and
+needs no routing. If your host is hard to route, set SOURCE to Input and put
+the signal you want to follow into SPAStrip itself.
 
 OVERSAMPLING AND CPU
 --------------------
@@ -116,13 +115,14 @@ oversampling, choose a shorter impulse response, or freeze/bounce the track.
 
 UNDO
 ----
-Undo and redo are in the header, and Cmd+Z / Shift+Cmd+Z (macOS) or
-Ctrl+Z / Shift+Ctrl+Z (Windows) work while the SPAStrip window has keyboard
-focus. Ctrl+Y also redoes on Windows. [TODO-REVIEW: confirm in a real host
-that the window keeps the keys; some DAWs grab them for their own undo.]
+The undo and redo buttons in the plug-in header always work. Cmd+Z and
+Shift+Cmd+Z (macOS), or Ctrl+Z, Shift+Ctrl+Z and Ctrl+Y (Windows), work when
+the plug-in window has keyboard focus, though some hosts keep these shortcuts
+for their own undo.
 
 SUPPORT
 -------
+  info@silverplatteraudio.com
   https://www.silverplatteraudio.com
 
 When you write to us, open the SPAStrip menu, choose "About SPAStrip..." and

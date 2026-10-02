@@ -468,8 +468,8 @@ void SPAStripProcessor::serviceMessageThread()
 void SPAStripProcessor::resolveTempo()
 {
     double bpm = 120.0;
-    if (auto* playHead = getPlayHead())
-        if (const auto position = playHead->getPosition())
+    if (auto* host = getPlayHead())
+        if (const auto position = host->getPosition())
             if (const auto hostBpm = position->getBpm())
                 if (std::isfinite (*hostBpm) && *hostBpm > 0.0)
                     bpm = *hostBpm;

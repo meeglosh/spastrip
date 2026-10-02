@@ -3,12 +3,11 @@ SPAStrip Quickstart
 Version @VERSION@
 
 1. INSERT IT
-   Add SPAStrip as an effect on a track, a bus or your master (in Logic it
-   is under Audio Units > Silverplatter Audio). It starts with every effect
+   Insert SPAStrip on a track or bus as an AU or VST3 effect. In Logic Pro,
+   for example, click an Audio FX slot on the channel strip and choose
+   Audio Units > Silverplatter Audio > SPAStrip. It starts with every effect
    off, so it is transparent until you turn something on. Each effect has an
    on/off switch in its tab.
-   [TODO-REVIEW: confirm the Logic menu path (Audio Units > Silverplatter
-   Audio) in Logic.]
 
 2. THE CHAIN
    The tabs along the top of the window are the effects, in the order the

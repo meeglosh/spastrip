@@ -91,7 +91,7 @@ namespace phase3Tests
             ed->getContent().getModViz().pollNow();
         };
         for (int i = 0; i < 5; ++i) cycle();       // warm up (static caches, fonts, ...)
-        size_t before = 0;
+        [[maybe_unused]] size_t before = 0;
        #if JUCE_MAC
         malloc_statistics_t st {};
         malloc_zone_statistics (nullptr, &st);

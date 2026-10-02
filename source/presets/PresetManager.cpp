@@ -90,14 +90,36 @@ namespace
         return {};
     }
 
+    // True if the entry, or any folder between it and `root`, is hidden. JUCE's File::isHidden()
+    // only checks FILE_ATTRIBUTE_HIDDEN on Windows but also catches dot-names on macOS/Linux, so
+    // dot-prefixed names (and in-flight ".tmp" files) are skipped explicitly for the same
+    // behaviour on every OS.
+    bool isHiddenOrTemp (const juce::File& root, const juce::File& f)
+    {
+        if (f.hasFileExtension ("tmp"))
+            return true;
+        for (auto cur = f; cur != root && cur != cur.getParentDirectory(); cur = cur.getParentDirectory())
+            if (cur.getFileName().startsWithChar ('.') || cur.isHidden())
+                return true;
+        return false;
+    }
+
+    juce::Array<juce::File> findVisible (const juce::File& root, int what, bool recursive, const juce::String& pattern = "*")
+    {
+        juce::Array<juce::File> result;
+        for (const auto& f : root.findChildFiles (what | juce::File::ignoreHiddenFiles, recursive, pattern))
+            if (! isHiddenOrTemp (root, f))
+                result.add (f);
+        return result;
+    }
+
     // Recursively lists the presets and folders below User/. The depth cap keeps a
     // symlink loop from running away.
     void scanFolder (const juce::File& dir, const juce::String& rel, int depth,
                      std::vector<PresetManager::PresetInfo>& out, juce::StringArray& folders)
     {
         const auto bank = rel.upToFirstOccurrenceOf ("/", false, false);
-        for (const auto& f : dir.findChildFiles (juce::File::findFiles | juce::File::ignoreHiddenFiles, false,
-                                                 "*" + juce::String (PresetManager::presetExtension)))
+        for (const auto& f : findVisible (dir, juce::File::findFiles, false, "*" + juce::String (PresetManager::presetExtension)))
         {
             auto stored = readStoredType (f);
             auto type = PresetManager::canonicalType (stored);
@@ -105,7 +127,7 @@ namespace
         }
         if (depth >= 8)
             return;
-        for (const auto& d : dir.findChildFiles (juce::File::findDirectories | juce::File::ignoreHiddenFiles, false))
+        for (const auto& d : findVisible (dir, juce::File::findDirectories, false))
         {
             const auto childRel = rel.isEmpty() ? d.getFileName() : rel + "/" + d.getFileName();
             folders.add (childRel);
@@ -1055,8 +1077,7 @@ bool PresetManager::exportFolder (const juce::String& rel, const juce::File& des
 
     juce::ZipFile::Builder builder;
     bool any = false;
-    for (const auto& f : folder.findChildFiles (juce::File::findFiles | juce::File::ignoreHiddenFiles, true,
-                                                "*" + juce::String (presetExtension)))
+    for (const auto& f : findVisible (folder, juce::File::findFiles, true, "*" + juce::String (presetExtension)))
     {
         any = true;
         builder.addFile (f, 9, f.getRelativePathFrom (folder).replaceCharacter ('\\', '/'));
@@ -1120,7 +1141,7 @@ PresetManager::ImportSession::ImportSession (PresetManager& o, const juce::Array
             if (bankName.isEmpty())
                 bankName = "Imported";
             const auto bankFolder = userRoot.getChildFile (bankName);
-            for (const auto& f : path.findChildFiles (juce::File::findFiles | juce::File::ignoreHiddenFiles, true, "*" + ext))
+            for (const auto& f : findVisible (path, juce::File::findFiles, true, "*" + ext))
             {
                 juce::StringArray relParts;
                 for (const auto& seg : juce::StringArray::fromTokens (f.getParentDirectory().getRelativePathFrom (path), "/\\", ""))

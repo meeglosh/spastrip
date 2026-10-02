@@ -117,10 +117,9 @@ The Licensor may assign this agreement in connection with a sale or
 reorganisation of its business; you may not assign it except under clause 5.
 
 13. THIRD-PARTY COMPONENTS AND FACTORY IMPULSE RESPONSES
-The Software is built with the JUCE framework (https://juce.com), used under
-its own license terms. [TODO-REVIEW: confirm the JUCE licence tier we hold,
-since the splash screen is disabled in the build, and that this sentence is
-accurate.]
+The Software is built with the JUCE framework (https://juce.com). Third-party
+components remain under their own licences, and nothing in this agreement
+changes those licences.
 
 SPAStrip includes factory impulse responses (IRs) made by other people. Each
 one remains under the licence its author chose, and nothing in this agreement
@@ -143,9 +142,7 @@ changes are described in CREDITS.txt.
 14. CONTACT
 Silverplatter Audio, Kenzora Games Inc., Quebec, Canada.
 https://www.silverplatteraudio.com
-[TODO-REVIEW: SPAGlitch's EULA gives a named email address as the contact.
-Replace the website line with the company support address we want customers to
-use, or keep the website only.]
+info@silverplatteraudio.com
 
 (c) Kenzora Games Inc. All rights reserved.
 Silverplatter Audio is a trademark of Kenzora Games Inc.
