@@ -27,6 +27,11 @@
 #include "params/ParameterRegistry.h"
 #include "mod/ModTargets.h"
 #include "presets/PresetManager.h"
+#include "ui/SPAStripEditor.h"
+#include "ui/UiSettings.h"
+#if JUCE_MAC
+ #include <malloc/malloc.h>
+#endif
 
 #include <SPAStripFactoryData.h>
 
@@ -1192,7 +1197,7 @@ namespace
         Proc proc;
         expect (proc.getName() == "SPAStrip", "plugin name");
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
-        expect (dynamic_cast<juce::GenericAudioProcessorEditor*> (ed.get()) != nullptr, "phase-1 editor is the generic host editor");
+        expect (dynamic_cast<spa::SPAStripEditor*> (ed.get()) != nullptr, "createEditor returns the SPAStrip editor (phase 3)");
         ed.reset();
         expect (&proc.getTelemetry() == &proc.getTelemetry(), "telemetry is exposed");
 
@@ -1222,6 +1227,7 @@ namespace
 #include "FxEngineTests.inc"
 #include "Phase2Tests.inc"
 #include "Phase2bTests.inc"
+#include "Phase3Tests.inc"
 }
 
 int main (int argc, char** argv)
@@ -1252,10 +1258,15 @@ int main (int argc, char** argv)
     const auto testPresetsRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                      .getChildFile ("spastrip-tests-presets-" + juce::String (juce::Random::getSystemRandom().nextInt (1000000)));
     spa::preset::PresetManager::setPresetsRootOverride (testPresetsRoot);
+    // The accent setting too (a hermetic file, never the user's own).
+    spa::ui::settings::setSettingsFileOverride (testPresetsRoot.getSiblingFile (testPresetsRoot.getFileName() + "-settings.xml"));
+
+    // `SPAStripTests --ui-only` runs just the editor tests (quick; used with `leaks --atExit`).
+    const bool uiOnly = argc >= 2 && juce::String (argv[1]) == "--ui-only";
 
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
-#define RUN(fn) do { ++run; fn(); } while (false)
+#define RUN(fn) do { if (! uiOnly || juce::String (#fn).startsWith ("phase3Tests::")) { ++run; fn(); } } while (false)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
@@ -1346,6 +1357,20 @@ int main (int argc, char** argv)
     RUN (phase2bTests::synthImportTest);
     RUN (phase2bTests::synthImportRealFilesTest);
     RUN (phase2bTests::concurrentEditsAllocationTest);
+
+    // --- Phase 3: the editor UI -----------------------------------------------
+    RUN (phase3Tests::editorLifecycleTest);
+    RUN (phase3Tests::tabOrderSyncTest);
+    RUN (phase3Tests::tabDragTest);
+    RUN (phase3Tests::lockToggleTest);
+    RUN (phase3Tests::modSlotUiTest);
+    RUN (phase3Tests::convolvePanelTest);
+    RUN (phase3Tests::controlCoverageTest);
+    RUN (phase3Tests::keyboardAndButtonsTest);
+    RUN (phase3Tests::uiStateTest);
+    RUN (phase3Tests::drawerAndDialogsTest);
+    RUN (phase3Tests::metersAndSidechainUiTest);
+    RUN (phase3Tests::accentSettingsTest);
 #undef RUN
     testPresetsRoot.deleteRecursively();
 

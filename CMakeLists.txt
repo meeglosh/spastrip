@@ -136,6 +136,13 @@ juce_add_binary_data(SPAStripFactoryData
 # Position-independent so the static data library links into the plugin bundles.
 set_target_properties(SPAStripFactoryData PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Brand logo (the SPAudio ring-and-disc mark, white), embedded for the editor.
+juce_add_binary_data(SPAStripBranding
+    HEADER_NAME SPAStripBrandingData.h
+    NAMESPACE spa_brand
+    SOURCES assets/branding/SPAudio_logo_white.svg)
+set_target_properties(SPAStripBranding PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 set(SPASTRIP_SOURCES
     source/SPAStripProcessor.cpp
     source/SPAStripProcessorEdit.cpp
@@ -145,7 +152,18 @@ set(SPASTRIP_SOURCES
     source/params/ParameterRegistry.cpp
     source/mod/ModTargets.cpp
     source/ir/FactoryIRs.cpp
-    source/dsp/FXChain.cpp)
+    source/dsp/FXChain.cpp
+    source/ui/ConvolvePanel.cpp
+    source/ui/Dialogs.cpp
+    source/ui/Displays.cpp
+    source/ui/FxPanel.cpp
+    source/ui/ModViz.cpp
+    source/ui/PresetBrowser.cpp
+    source/ui/SectionPanel.cpp
+    source/ui/SPAStripEditor.cpp
+    source/ui/SPAStripLookAndFeel.cpp
+    source/ui/StripPanels.cpp
+    source/ui/UiSettings.cpp)
 
 target_sources(SPAStrip PRIVATE ${SPASTRIP_SOURCES})
 
@@ -163,6 +181,7 @@ target_compile_definitions(SPAStrip PRIVATE
 target_link_libraries(SPAStrip
     PRIVATE
         SPAStripFactoryData
+        SPAStripBranding
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -191,6 +210,7 @@ if(SPASTRIP_BUILD_TESTS)
     target_link_libraries(SPAStripTests
         PRIVATE
             SPAStripFactoryData
+            SPAStripBranding
             juce::juce_audio_utils
             juce::juce_cryptography   # tests only: SHA-256 of the embedded FLACs vs the manifest
             juce::juce_dsp
@@ -199,4 +219,29 @@ if(SPASTRIP_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME SPAStripTests COMMAND SPAStripTests)
+endif()
+
+# Headless screenshot tool: constructs the processor + editor off-screen, feeds test
+# audio and writes PNGs of the editor (see tools/SPAStripSnapshots.cpp).
+option(SPASTRIP_BUILD_SNAPSHOTS "Build the editor screenshot tool" ON)
+if(SPASTRIP_BUILD_SNAPSHOTS)
+    juce_add_console_app(SPAStripSnapshots PRODUCT_NAME "SPAStripSnapshots")
+    target_sources(SPAStripSnapshots PRIVATE tools/SPAStripSnapshots.cpp ${SPASTRIP_SOURCES})
+    target_include_directories(SPAStripSnapshots PRIVATE source ${SPASTRIP_GENERATED_DIR})
+    target_compile_definitions(SPAStripSnapshots PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        SPASTRIP_VERSION="${PROJECT_VERSION}"
+        SPASTRIP_GIT_COMMIT="${SPASTRIP_GIT_COMMIT}"
+        SPASTRIP_BUILD_DATE="${SPASTRIP_BUILD_DATE}")
+    target_link_libraries(SPAStripSnapshots
+        PRIVATE
+            SPAStripFactoryData
+            SPAStripBranding
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
 endif()

@@ -27,6 +27,12 @@ struct Telemetry
     std::atomic<float> peakL { 0.0f };
     std::atomic<float> peakR { 0.0f };
 
+    // SPAStripAdded (phase 3): block peaks of the host input as it enters the
+    // plugin (before input gain and the chain), host domain, for the editor's
+    // input meter.
+    std::atomic<float> inPeakL { 0.0f };
+    std::atomic<float> inPeakR { 0.0f };
+
     // Post-chain mono scope ring for the EQ spectrum analyzer. The audio
     // thread pushes the output sample-by-sample; the UI reads the latest
     // window ending at scopeWrite and runs its own FFT. Cosmetic, so relaxed

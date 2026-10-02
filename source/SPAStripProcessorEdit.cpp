@@ -293,6 +293,12 @@ juce::ValueTree SPAStripProcessor::capturePresetState()
     for (const char* name : { kLockMaskProperty, kWildnessProperty, kPresetNameProperty, kPresetEditedProperty })
         state.removeProperty (name, nullptr);
 
+    // UI state (uiScale, uiFxTab, drawer open, ...: every "ui*" property) lives in
+    // host state only; a saved preset must not carry it.
+    for (int i = state.getNumProperties(); --i >= 0;)
+        if (state.getPropertyName (i).toString().startsWith ("ui"))
+            state.removeProperty (state.getPropertyName (i), nullptr);
+
     // global.oversampling is a quality / CPU setting of THIS session, not part
     // of a sound: a preset neither carries nor changes it.
     for (int i = state.getNumChildren(); --i >= 0;)

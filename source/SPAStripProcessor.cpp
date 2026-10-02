@@ -1,4 +1,5 @@
 #include "SPAStripProcessor.h"
+#include "ui/SPAStripEditor.h"
 
 #include "presets/PresetManager.h"
 
@@ -622,6 +623,18 @@ void SPAStripProcessor::processChunk (juce::AudioBuffer<float>& hostBuffer, int 
                 scBusActive = true;
             }
         }
+    }
+
+    // SPAStripAdded: pre-chain input peak for the editor's input meter.
+    {
+        float ipL = 0.0f, ipR = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            ipL = juce::jmax (ipL, std::abs (wL[i]));
+            ipR = juce::jmax (ipR, std::abs (wR[i]));
+        }
+        telemetry.inPeakL.store (ipL, std::memory_order_relaxed);
+        telemetry.inPeakR.store (ipR, std::memory_order_relaxed);
     }
 
     // --- 2. updateFXParams (also feeds the latency used by the dry path). Any
@@ -1447,8 +1460,7 @@ void SPAStripProcessor::setStateInformation (const void* data, int sizeInBytes)
 
 juce::AudioProcessorEditor* SPAStripProcessor::createEditor()
 {
-    // Phase 1: host-generic editor; the real UI is a later phase.
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new SPAStripEditor (*this);
 }
 
 } // namespace spa
