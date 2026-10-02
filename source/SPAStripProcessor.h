@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <set>
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -11,12 +12,17 @@
 #include "dsp/FXChain.h"
 #include "dsp/Telemetry.h"
 #include "ir/FactoryIRs.h"
+#include "ir/StoredIR.h"
 #include "mod/ModTargets.h"
 #include "mod/SidechainDetector.h"
 #include "params/ParameterRegistry.h"
+#include "params/Randomizer.h"
+#include "state/UndoHistory.h"
 
 namespace spa
 {
+
+namespace preset { class PresetManager; }
 
 // SPAStrip: the SPASynth effects chain as a standalone audio effect.
 //
@@ -85,6 +91,98 @@ public:
     // audio thread; persisted as the "fxOrder" int64 state property).
     void setFxOrder (const juce::Array<int>& moduleIds);
     juce::Array<int> getFxOrder() const;
+
+    //==========================================================================
+    // Randomize All, WILD and per-effect locks (message thread).
+    //
+    // Locks: one per chain module (dsp::FXChain::Module; TREM/VIB covers both
+    // fxTrem.* and fxVib.*). A locked module keeps every parameter (its enable
+    // toggle included) AND its slot in the chain order through Randomize All.
+    // The lock mask is a bitmask keyed by the Module enum value, stored in the
+    // "fxLockMask" state property: saved with the host state, NOT part of
+    // presets and NOT undoable (a workflow setting). Same for WILD
+    // ("randomWildness", 0..1, default 0.5).
+    //
+    // randomizeAll() is ONE undo step; every parameter write is a
+    // begin-gesture / setValueNotifyingHost / end-gesture so hosts record it.
+    // The Random& overload is the deterministic test seam.
+    void randomizeAll();
+    void randomizeAll (juce::Random& rng);
+    float getRandomWildness() const;
+    void setRandomWildness (float wildness);
+    bool isLocked (dsp::FXChain::Module module) const;
+    void setLocked (dsp::FXChain::Module module, bool locked);
+    juce::uint32 getFxLockMask() const;
+
+    //==========================================================================
+    // Undo / redo (message thread). History of everything done to the SOUND:
+    // all parameter values, the FX order, the mod slot targets and the IR
+    // source (an embedded IR blob is shared between steps, never copied).
+    // Not undoable: the lock mask, WILD, UI state.
+    //
+    // What opens a step: (a) a parameter GESTURE -- every editor control
+    // brackets its drag/click with begin/endChangeGesture, which the
+    // per-parameter listener turns into ONE step per whole drag; (b) an
+    // explicit UndoStep scope around a discrete action (the action methods
+    // below open their own). Plain setValueNotifyingHost() calls with no gesture
+    // and no scope -- host automation playback -- are never recorded, so
+    // automation cannot flood the history. Steps nest: while one is open every
+    // inner gesture/scope folds into it (Randomize All writes each parameter
+    // inside its own gesture and still lands as ONE step). A step that ends in
+    // the state it started in (a click on the same value, a drag back to the
+    // start) records nothing. Returns false (and records nothing) while an
+    // undo/redo is itself being applied, or off the message thread.
+    static constexpr int kMaxUndoSteps = UndoStacks::maxSteps;   // per stack
+    bool beginUndoStep (const juce::String& label, bool resetsChain = false, bool forceRecord = false);
+    void endUndoStep();
+    struct UndoStep
+    {
+        UndoStep (SPAStripProcessor& p, const juce::String& label,
+                  bool resetsChain = false, bool forceRecord = false)
+            : proc (p), active (p.beginUndoStep (label, resetsChain, forceRecord)) {}
+        ~UndoStep() { if (active) proc.endUndoStep(); }
+        UndoStep (const UndoStep&) = delete;
+        UndoStep& operator= (const UndoStep&) = delete;
+        SPAStripProcessor& proc;
+        bool active;
+    };
+    bool canUndo() const { return undoStacks.canUndo(); }
+    bool canRedo() const { return undoStacks.canRedo(); }
+    juce::String getUndoLabel() const { return undoStacks.canUndo() ? undoStacks.undoLabel() : juce::String(); }
+    juce::String getRedoLabel() const { return undoStacks.canRedo() ? undoStacks.redoLabel() : juce::String(); }
+    int getUndoStepCount() const { return undoStacks.undoCount(); }
+    int getRedoStepCount() const { return undoStacks.redoCount(); }
+    bool undo();
+    bool redo();
+    void clearUndoHistory();
+    // The editor's undo/redo buttons listen here (fires when a step is recorded,
+    // on undo/redo and when the history is cleared).
+    juce::ChangeBroadcaster& getUndoBroadcaster() { return undoBroadcaster; }
+    PatchSnapshot capturePatchSnapshot() const;
+    const UndoStacks& getUndoStacksForTest() const { return undoStacks; }
+    UndoStacks& getUndoStacksForTest() { return undoStacks; }
+
+    //==========================================================================
+    // Presets (see presets/PresetManager.h). The manager is owned here; these two
+    // are what it needs from the processor.
+    preset::PresetManager& getPresetManager() { return *presetManager; }
+    // The current state as a preset: parameters, FX order, mod slot targets and
+    // IR source (an embedded user IR travels inside it). Excludes -- a preset
+    // neither carries nor changes them -- the lock mask, WILD,
+    // global.oversampling, UI properties and the preset identity.
+    juce::ValueTree capturePresetState();
+    // Loads a preset tree as ONE undo step: replaces everything a preset owns,
+    // keeps the session's lock mask / WILD / oversampling / UI properties, and
+    // resets the FX chain state (under the callback lock, like SPASynth's
+    // preset load). False (nothing changed) for a tree that is not a state.
+    bool applyPresetState (const juce::ValueTree& presetTree, const juce::String& undoLabel);
+
+    // Property names kept in the live state tree.
+    static constexpr const char* kLockMaskProperty = "fxLockMask";
+    static constexpr const char* kWildnessProperty = "randomWildness";
+    // Host-state-only (never in a preset): the loaded preset's name / edited flag.
+    static constexpr const char* kPresetNameProperty = "presetName";
+    static constexpr const char* kPresetEditedProperty = "presetEdited";
 
     //==========================================================================
     // Convolve impulse response. The decoded audio is stored INSIDE the plugin
@@ -187,7 +285,10 @@ private:
     }
 
     juce::ValueTree buildStateTree();
-    void restoreStateTree (const juce::ValueTree& incoming);
+    // isPresetLoad: a preset / Init load (resets the FX chain state under the
+    // callback lock; keeps the undo history). Otherwise a host session restore
+    // (no chain reset; clears the undo history, which is not part of a session).
+    void restoreStateTree (const juce::ValueTree& incoming, bool isPresetLoad);
     void loadStoredIRIntoChain();            // message thread
     void scheduleStoredIRLoad();
 
@@ -385,18 +486,41 @@ private:
     //==========================================================================
     // Convolve IR as stored in the plugin state. Guarded by irLock (never
     // touched from the audio thread).
-    struct StoredIR
-    {
-        juce::String source { "none" };   // "none" | "embedded" | "factory:<id>"
-        juce::String name;                // original file name (no extension), for display
-        double sampleRate = 0.0;
-        int numChannels = 0;
-        int numSamples = 0;
-        juce::MemoryBlock flac;           // 24-bit FLAC of the (peak-normalised) IR; empty for factory IRs
-    };
+    // Held by shared pointer (immutable once built) so undo snapshots can share
+    // the FLAC blob instead of copying it.
     mutable juce::CriticalSection irLock;
-    StoredIR storedIR;
+    StoredIRPtr storedIR = std::make_shared<const StoredIR>();
     std::unique_ptr<juce::AudioFormatManager> irFormats;
+
+    //==========================================================================
+    // Undo internals (see the public block above).
+    UndoStacks undoStacks;
+    juce::ChangeBroadcaster undoBroadcaster;
+    int undoDepth = 0;                 // open gestures + scopes (message thread)
+    bool undoApplying = false;         // true while undo()/redo() writes state
+    juce::uint32 undoOpenedMs = 0;     // when depth went 0 -> 1 (watchdog)
+    UndoEntry pendingUndo;             // the "before" state of the open step
+    bool pendingForceRecord = false;
+    std::vector<juce::RangedAudioParameter*> undoParams;   // registry order
+    std::multiset<int> acceptedGestures;    // parameter indices whose gesture opened a step
+    // Gesture start/end opens/closes undo steps; ANY value change (including
+    // host automation, possibly on the audio thread) only raises an atomic flag
+    // for the 150 ms timer to re-evaluate the preset "edited" state.
+    struct UndoGestureListener : juce::AudioProcessorParameter::Listener
+    {
+        explicit UndoGestureListener (SPAStripProcessor& o) : owner (o) {}
+        void parameterValueChanged (int, float) override { owner.editedCheckPending.store (true, std::memory_order_relaxed); }
+        void parameterGestureChanged (int index, bool starting) override { owner.onParameterGesture (index, starting); }
+        SPAStripProcessor& owner;
+    };
+    UndoGestureListener undoGestureListener { *this };
+    std::atomic<bool> editedCheckPending { false };
+    void onParameterGesture (int parameterIndex, bool starting);
+    void commitUndoStep();
+    void applyPatchSnapshot (const PatchSnapshot& snap, bool resetChain, const PresetContext* restoreContext);
+    void watchdogCloseStaleUndoStep();
+
+    std::unique_ptr<preset::PresetManager> presetManager;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (SPAStripProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SPAStripProcessor)

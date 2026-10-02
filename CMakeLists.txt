@@ -138,6 +138,10 @@ set_target_properties(SPAStripFactoryData PROPERTIES POSITION_INDEPENDENT_CODE O
 
 set(SPASTRIP_SOURCES
     source/SPAStripProcessor.cpp
+    source/SPAStripProcessorEdit.cpp
+    source/params/Randomizer.cpp
+    source/presets/PresetManager.cpp
+    source/presets/SPASynthImport.cpp
     source/params/ParameterRegistry.cpp
     source/mod/ModTargets.cpp
     source/ir/FactoryIRs.cpp

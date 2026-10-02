@@ -1,5 +1,7 @@
 #include "SPAStripProcessor.h"
 
+#include "presets/PresetManager.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -236,6 +238,19 @@ SPAStripProcessor::SPAStripProcessor()
     irFormats = std::make_unique<juce::AudioFormatManager>();
     irFormats->registerBasicFormats();
 
+    // Undo: every registry parameter, in registry order (a snapshot is one
+    // normalised float per entry), each with the gesture / value listener.
+    for (const auto& def : params::all())
+    {
+        auto* p = apvts.getParameter (def.id);
+        jassert (p != nullptr);
+        undoParams.push_back (p);
+        p->addListener (&undoGestureListener);
+    }
+
+    // Constructed last: it captures the pristine state as the "Init" baseline.
+    presetManager = std::make_unique<preset::PresetManager> (*this);
+
     // Message-thread housekeeping (oversampling rebuild, latency publish,
     // non-finite flush, IR reshape), same 150 ms cadence as SPASynth.
     startTimer (150);
@@ -244,6 +259,8 @@ SPAStripProcessor::SPAStripProcessor()
 SPAStripProcessor::~SPAStripProcessor()
 {
     stopTimer();
+    for (auto* p : undoParams)
+        p->removeListener (&undoGestureListener);
 }
 
 //==============================================================================
@@ -417,6 +434,13 @@ void SPAStripProcessor::serviceMessageThread()
     // Report latency: limiter lookahead (engine -> host samples) plus the
     // oversampler's own latency.
     applyFactorLatency();
+
+    // A control destroyed mid-drag never sends its gesture end; close the step.
+    watchdogCloseStaleUndoStep();
+    // Parameter edits (including host automation) may have moved the patch away
+    // from, or back to, the loaded preset: re-evaluate the edited flag.
+    if (editedCheckPending.exchange (false, std::memory_order_relaxed))
+        presetManager->refreshEditedState();
 
     // Convolution IR shaping (decay/damping/start) reshapes + reloads the IR;
     // done here (message thread), only when the values actually move.
@@ -1024,6 +1048,7 @@ void SPAStripProcessor::setFxOrder (const juce::Array<int>& moduleIds)
 {
     if (moduleIds.size() != dsp::FXChain::numModules)
         return;
+    UndoStep undoScope (*this, "FX ORDER");
     dsp::FXChain::Module ord[dsp::FXChain::numModules];
     for (int i = 0; i < dsp::FXChain::numModules; ++i)
         ord[i] = (dsp::FXChain::Module) moduleIds[i];
@@ -1049,6 +1074,7 @@ bool SPAStripProcessor::loadConvolutionIR (const juce::File& file)
     if (! file.existsAsFile())
         return false;
 
+    UndoStep undoScope (*this, "LOAD IR");
     std::unique_ptr<juce::AudioFormatReader> reader (irFormats->createReaderFor (file));
     if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
         return false;
@@ -1093,8 +1119,9 @@ bool SPAStripProcessor::loadConvolutionIR (const juce::File& file)
         return false;
 
     {
+        auto built = std::make_shared<const StoredIR> (std::move (s));
         const juce::ScopedLock sl (irLock);
-        storedIR = std::move (s);
+        storedIR = std::move (built);
     }
     loadStoredIRIntoChain();
     return true;
@@ -1106,6 +1133,7 @@ bool SPAStripProcessor::loadFactoryIR (const juce::String& id)
     if (info == nullptr)
         return false;
 
+    UndoStep undoScope (*this, "FACTORY IR");
     juce::AudioBuffer<float> ir;
     double irRate = 0.0;
     if (! factory::decode (id, ir, irRate))
@@ -1118,8 +1146,9 @@ bool SPAStripProcessor::loadFactoryIR (const juce::String& id)
     s.numChannels = ir.getNumChannels();
     s.numSamples = ir.getNumSamples();
     {
+        auto built = std::make_shared<const StoredIR> (std::move (s));
         const juce::ScopedLock sl (irLock);
-        storedIR = std::move (s);
+        storedIR = std::move (built);
     }
     loadStoredIRIntoChain();
     return true;
@@ -1127,9 +1156,11 @@ bool SPAStripProcessor::loadFactoryIR (const juce::String& id)
 
 void SPAStripProcessor::clearConvolutionIR()
 {
+    UndoStep undoScope (*this, "CLEAR IR");
     {
+        auto empty = std::make_shared<const StoredIR>();
         const juce::ScopedLock sl (irLock);
-        storedIR = {};
+        storedIR = std::move (empty);
     }
     loadStoredIRIntoChain();
 }
@@ -1137,13 +1168,13 @@ void SPAStripProcessor::clearConvolutionIR()
 juce::String SPAStripProcessor::getConvolutionIRName() const
 {
     const juce::ScopedLock sl (irLock);
-    return storedIR.name;
+    return storedIR->name;
 }
 
 juce::String SPAStripProcessor::getConvolutionIRSource() const
 {
     const juce::ScopedLock sl (irLock);
-    return storedIR.source;
+    return storedIR->source;
 }
 
 // Decodes the stored IR (the FLAC in the state, so a fresh load and a restore
@@ -1151,11 +1182,12 @@ juce::String SPAStripProcessor::getConvolutionIRSource() const
 // thread.
 void SPAStripProcessor::loadStoredIRIntoChain()
 {
-    StoredIR s;
+    StoredIRPtr sp;
     {
         const juce::ScopedLock sl (irLock);
-        s = storedIR;
+        sp = storedIR;
     }
+    const StoredIR& s = *sp;
 
     // "factory:<id>": the state holds only the id; the audio is decoded from the
     // FLAC embedded in the plugin. An id this build does not ship loads no
@@ -1222,11 +1254,12 @@ juce::ValueTree SPAStripProcessor::buildStateTree()
     auto state = apvts.copyState();
     state.setProperty ("stateVersion", kStateVersion, nullptr);
 
-    StoredIR s;
+    StoredIRPtr sp;
     {
         const juce::ScopedLock sl (irLock);
-        s = storedIR;
+        sp = storedIR;
     }
+    const StoredIR& s = *sp;
 
     // Never leave a stale IR child from the live tree.
     for (auto stale = state.getChildWithName (kIRChildType); stale.isValid(); stale = state.getChildWithName (kIRChildType))
@@ -1238,6 +1271,14 @@ juce::ValueTree SPAStripProcessor::buildStateTree()
     // Modulation slot targets (parameter-ID strings; "" = unassigned).
     for (int i = 0; i < numModSlots; ++i)
         state.setProperty (modSlotStateKey (i), getModSlotTarget (i), nullptr);
+
+    // Which preset the header shows (host state only; presets never carry it).
+    // (getStateInformation may be called by a host off the message thread, where only
+    // the cached edited flag and the lock-guarded name are safe to read.)
+    state.setProperty (kPresetNameProperty, presetManager->getCurrentName(), nullptr);
+    const bool onMessageThread = juce::MessageManager::existsAndIsCurrentThread();
+    if (onMessageThread ? presetManager->isEdited() : presetManager->isEditedCached())
+        state.setProperty (kPresetEditedProperty, true, nullptr);
 
     if (s.source == kIRSourceEmbedded && s.flac.getSize() > 0)
     {
@@ -1253,7 +1294,7 @@ juce::ValueTree SPAStripProcessor::buildStateTree()
     return state;
 }
 
-void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming)
+void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming, bool isPresetLoad)
 {
     if (! incoming.isValid() || ! incoming.hasType (apvts.state.getType()))
         return;
@@ -1289,12 +1330,14 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming)
     if (s.source.isEmpty())
         s.source = kIRSourceNone;
 
-    // Hook for a later SPASynth-FX import: every FX ID is identical to the
-    // synth's, so a converter only has to map the synth's PARAM children (by
-    // id) into this `state` copy before fillMissingParamsWithDefaults runs.
-    // (SPASynth's 1.0.29 -> 1.0.30 grain-spread migration is deliberately not
-    // ported: no legacy SPAStrip states exist.)
+    // SPASynth imports are converted (FX IDs are identical to the synth's, the
+    // 1.0.30 grain-spread migration applied) by preset::PresetManager before
+    // they get here; this function only ever sees SPAStrip-shaped state.
     auto state = incoming.createCopy();
+    const auto savedPresetName = state.getProperty (kPresetNameProperty).toString();
+    const bool savedPresetEdited = (bool) state.getProperty (kPresetEditedProperty, false);
+    state.removeProperty (kPresetNameProperty, nullptr);   // host-state-only bookkeeping, not live state
+    state.removeProperty (kPresetEditedProperty, nullptr);
     for (auto child = state.getChildWithName (kIRChildType); child.isValid(); child = state.getChildWithName (kIRChildType))
         state.removeChild (child, nullptr);
     fillMissingParamsWithDefaults (state);
@@ -1314,11 +1357,22 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming)
         const auto packed = dsp::FXChain::packOrder (restored);
         fxOrderPacked.store (packed, std::memory_order_relaxed);
         apvts.state.setProperty ("fxOrder", (juce::int64) packed, nullptr);
+
+        // A preset load replaces the whole sound: reset the FX chain's stateful
+        // DSP (tails, feedback rings) so the first block after the swap runs the
+        // new parameters over silent state, as SPASynth's preset load does. (A
+        // host session restore, like the 150 ms flush, leaves it alone. Randomize
+        // All does NOT reset either: it replaces no state wholesale, and cutting
+        // reverb/delay tails on every roll would be a behaviour change nobody
+        // asked for -- see randomizeAll.)
+        if (isPresetLoad)
+            fxChain.reset();
     }
 
     {
+        auto built = std::make_shared<const StoredIR> (std::move (s));
         const juce::ScopedLock sl (irLock);
-        storedIR = std::move (s);
+        storedIR = std::move (built);
     }
 
     // Slot targets: unknown / excluded IDs (or a state from before the matrix
@@ -1328,6 +1382,28 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming)
                                       std::memory_order_relaxed);
 
     scheduleStoredIRLoad();
+
+    // A host session restore is not an edit: it starts with an empty history and
+    // brings the header's preset name back (edited only if it was when saved).
+    // (The history and the preset identity are message-thread structures, so a host that
+    // restores on another thread gets them updated there, like the IR load above.)
+    if (! isPresetLoad)
+    {
+        const auto finish = [this, savedPresetName, savedPresetEdited]
+        {
+            clearUndoHistory();
+            presetManager->sessionRestored (savedPresetName, savedPresetEdited);
+        };
+        if (juce::MessageManager::getInstanceWithoutCreating() == nullptr
+            || juce::MessageManager::getInstance()->isThisTheMessageThread())
+            finish();
+        else
+            juce::MessageManager::callAsync ([weak = juce::WeakReference<SPAStripProcessor> (this), finish]
+            {
+                if (weak != nullptr)
+                    finish();
+            });
+    }
 }
 
 //==============================================================================
@@ -1335,6 +1411,7 @@ bool SPAStripProcessor::setModSlotTarget (int slot, const juce::String& paramete
 {
     if (! juce::isPositiveAndBelow (slot, numModSlots))
         return false;
+    UndoStep undoScope (*this, "MOD TARGET " + juce::String (slot + 1));
     if (parameterID.isEmpty())
     {
         slotTarget[(size_t) slot].store (-1, std::memory_order_relaxed);
@@ -1365,7 +1442,7 @@ void SPAStripProcessor::getStateInformation (juce::MemoryBlock& destData)
 void SPAStripProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        restoreStateTree (juce::ValueTree::fromXml (*xml));
+        restoreStateTree (juce::ValueTree::fromXml (*xml), false);
 }
 
 juce::AudioProcessorEditor* SPAStripProcessor::createEditor()

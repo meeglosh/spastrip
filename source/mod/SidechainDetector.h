@@ -15,12 +15,16 @@ namespace spa::mod
 //                auditioning does not click)
 //             -> peak = max(|L|, |R|)
 //             -> one-pole attack / release follower
-//             -> envelope, clamped 0..1 on OUTPUT
+//             -> envelope, clamped 0..1 (the follower STATE is clamped too)
 //
-// The follower state itself is NOT clamped: a loud signal at high sensitivity
-// parks the state above 1 and the release then has to decay from there, as in
-// a conventional peak detector; only the value handed to the modulation
-// matrix (and to telemetry) is clamped to 0..1.
+// The follower state is capped at 1.0 (the full-scale envelope the modulation
+// matrix can ever see). It used to be left unclamped, so a very hot signal
+// (+24 dB sensitivity on a loud source) parked the state far above 1 while the
+// output stayed pinned at 1, and the release then spent ln(peak) time
+// constants decaying invisibly before the output moved at all. Only the state
+// is capped, not the input: the attack still aims at the true rectified level,
+// so a hot signal saturates the envelope exactly as quickly as before, and the
+// release starts from 1.0 the instant the signal falls away.
 class SidechainDetector
 {
 public:
@@ -84,12 +88,13 @@ public:
             const float x = juce::jmax (std::abs (l), std::abs (r));
             const float coef = x > env ? atkCoef : relCoef;
             env = x + coef * (env - x);
+            if (env > 1.0f) env = 1.0f;       // release always starts from full scale
             if (env < 1.0e-12f) env = 0.0f;   // keep the state out of denormals
-            envOut[i] = juce::jmin (1.0f, env);
+            envOut[i] = env;
         }
     }
 
-    float currentEnvelope() const { return juce::jmin (1.0f, env); }
+    float currentEnvelope() const { return env; }
 
 private:
     struct Biquad

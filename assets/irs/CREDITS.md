@@ -11,7 +11,6 @@ Adventure Kid asks for a credit whenever his impulse responses are redistributed
 ### Included (Adventure Kid)
 - **AKIR Dual Springer** by Adventure Kid. Source: https://www.adventurekid.se/akrt/free-reverb-impulse-responses/ . Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: resampled 44.1 to 48 kHz, 32-bit float WAV to 24-bit FLAC, peak-normalised to -1 dBFS; single file (AKIR_DualSpringer_10.wav) taken from the set.
 - **AKIR Smooth Springer** by Adventure Kid. Source: https://www.adventurekid.se/akrt/free-reverb-impulse-responses/ . Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: resampled 44.1 to 48 kHz, 32-bit float WAV to 24-bit FLAC, peak-normalised to -1 dBFS; single file (AKIR_SmSpringer_10.wav) taken from the set.
-- **AKIR Uni Springer** by Adventure Kid. Source: https://www.adventurekid.se/akrt/free-reverb-impulse-responses/ . Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: resampled 44.1 to 48 kHz, 32-bit float WAV to 24-bit FLAC, peak-normalised to -1 dBFS; single file (AKIR_UniSpringer_10.wav) taken from the set.
 
 ### Included (Freesound, CC BY 4.0)
 - **"Large Dark Plate 04"** by recordinghopkins (Freesound). Source: https://freesound.org/people/recordinghopkins/sounds/175317/ . Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: already 48 kHz (no resampling), 24-bit WAV to 24-bit FLAC, peak-normalised to -1 dBFS, not truncated, no EQ or denoising.

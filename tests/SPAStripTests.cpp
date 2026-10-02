@@ -12,7 +12,12 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#if JUCE_MAC
+ #include <pthread.h>
+#endif
 #include <set>
+#include <thread>
+#include <chrono>
 #include <vector>
 
 #include <juce_cryptography/juce_cryptography.h>
@@ -21,6 +26,7 @@
 #include "dsp/FXChain.h"
 #include "params/ParameterRegistry.h"
 #include "mod/ModTargets.h"
+#include "presets/PresetManager.h"
 
 #include <SPAStripFactoryData.h>
 
@@ -1215,6 +1221,7 @@ namespace
 #include "FxModuleTests.inc"
 #include "FxEngineTests.inc"
 #include "Phase2Tests.inc"
+#include "Phase2bTests.inc"
 }
 
 int main (int argc, char** argv)
@@ -1239,6 +1246,12 @@ int main (int argc, char** argv)
                                       argc >= 4 ? juce::String (argv[3]).getDoubleValue() : 48000.0, cfg);
         return 0;
     }
+
+    // Hermetic presets: every processor's PresetManager defaults to this temp folder
+    // instead of the user's real <app data>/Silverplatter Audio/SPAStrip/Presets.
+    const auto testPresetsRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                     .getChildFile ("spastrip-tests-presets-" + juce::String (juce::Random::getSystemRandom().nextInt (1000000)));
+    spa::preset::PresetManager::setPresetsRootOverride (testPresetsRoot);
 
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
@@ -1301,7 +1314,40 @@ int main (int argc, char** argv)
     RUN (phase2Tests::karlskircheAssetTest);
     RUN (phase2Tests::factoryIRLoadTest);
     RUN (phase2Tests::factoryIRStateTest);
+
+    // --- Phase 2b: review fixes, Randomize All / locks, undo, presets, SPASynth import ----
+    RUN (phase2bTests::sidechainClampTest);
+    RUN (phase2bTests::creditsMatchShippedIRsTest);
+    RUN (phase2bTests::samplingParityTest);
+    RUN (phase2bTests::randomizeParityWithSynthTest);
+    RUN (phase2bTests::randomizeBasicsTest);
+    RUN (phase2bTests::nonFxStateUntouchedTest);
+    RUN (phase2bTests::lockedModuleTest);
+    RUN (phase2bTests::allLockedTest);
+    RUN (phase2bTests::limiterRulesTest);
+    RUN (phase2bTests::tremVibLockTest);
+    RUN (phase2bTests::grainConvRulesTest);
+    RUN (phase2bTests::orderRulesTest);
+    RUN (phase2bTests::randomizeAudioSoakTest);
+    RUN (phase2bTests::randomizeKeepsFxStateTest);
+    RUN (phase2bTests::lockPersistenceTest);
+    RUN (phase2bTests::undoGestureTest);
+    RUN (phase2bTests::undoBoundTest);
+    RUN (phase2bTests::undoContentTest);
+    RUN (phase2bTests::randomizeUndoTest);
+    RUN (phase2bTests::presetRoundTripTest);
+    RUN (phase2bTests::presetFileFormatTest);
+    RUN (phase2bTests::presetManagementTest);
+    RUN (phase2bTests::presetFactorySeamTest);
+    RUN (phase2bTests::presetDirtyFlagTest);
+    RUN (phase2bTests::presetInitTest);
+    RUN (phase2bTests::presetLoadUndoAndResetTest);
+    RUN (phase2bTests::hostStatePresetNameTest);
+    RUN (phase2bTests::synthImportTest);
+    RUN (phase2bTests::synthImportRealFilesTest);
+    RUN (phase2bTests::concurrentEditsAllocationTest);
 #undef RUN
+    testPresetsRoot.deleteRecursively();
 
     std::cout << "\n========================================\n"
               << run << " test functions, " << failures << " failed expectation(s), "
