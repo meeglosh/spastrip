@@ -100,11 +100,11 @@ for key in ("FileVersion", "ProductVersion"):
     k = j
     while data[k:k+2] != b"\0\0":
         k += 2
-    found[key] = data[j:k].decode("utf-16-le", "replace")
+    found[key] = data[j:k].decode("utf-16-le", "replace").strip(" \t\r\n\0")
 if not found:
     sys.exit("no FileVersion/ProductVersion resource found in " + path)
 print("exe version resource:", found)
-if not all(v in (version, version + ".0") for v in found.values()):
+if not all(v in (version, version + ".0") for v in found.values()):  # exact, after stripping
     sys.exit("exe version does not match " + version)
 PY
 }
