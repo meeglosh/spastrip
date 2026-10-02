@@ -1,0 +1,151 @@
+SPAStrip - End User License Agreement
+Silverplatter Audio, a product of Kenzora Games Inc.
+
+Please read this agreement before installing. By installing or using SPAStrip
+you accept these terms. If you do not accept them, do not install it, and
+contact us for a refund in accordance with our refund policy.
+
+0. LANGUAGE / LANGUE
+The parties have required that this agreement and all related documents be
+drawn up in English. Les parties ont exige que la presente convention et tous
+les documents qui s'y rattachent soient rediges en anglais. A French version of
+this agreement is available on request from the address below.
+
+1. LICENSE GRANT
+Kenzora Games Inc. ("the Licensor") grants you a non-exclusive, perpetual
+license to install and use SPAStrip ("the Software") on computers you own or
+use, for your own music and audio production, in any number of your own
+studios and in live performance. A license is held by one person. Household
+members may use your installations; an organisation needs one license per
+person who uses the Software.
+
+2. OWNERSHIP
+The Software is licensed, not sold. The Licensor retains all right, title and
+interest in it, including all intellectual property rights in its code,
+interface, artwork and presets, subject to clause 13 for the factory impulse
+responses.
+
+3. YOUR MUSIC IS YOURS
+Audio you create or process with the Software belongs to you. You may use
+recordings made with it in your own works, commercially or otherwise,
+worldwide, in perpetuity, with no further permission, royalty, credit or
+payment. This includes released records, film, television, games, advertising
+and library music.
+
+The one limit is the Software itself and the content the Licensor supplies with
+it: you may not redistribute the Software, or the Licensor's presets or other
+content, as such. That means no sharing, reselling or uploading of the plugin
+or its installer, and no preset packs, sample or impulse response libraries,
+construction kits, or AI or machine-learning training sets built substantially
+from the Licensor's content. Using the Software to make music is exactly what
+it is for; repackaging it as a product to be resold or redistributed is not.
+The factory impulse responses are governed by clause 13.
+
+4. RESTRICTIONS
+You may not sell, rent, lease, lend, sublicense or share the Software or your
+license. You may not distribute copies. You may not reverse engineer,
+decompile or disassemble the Software, except to the extent applicable law
+expressly permits despite this limitation. You may not remove or alter any
+copyright, trademark or other proprietary notice, and you may not circumvent
+any licensing or authorisation mechanism.
+
+5. TRANSFER
+You may transfer your license permanently to another person with the Licensor's
+prior written consent, provided you transfer it in whole, keep no copies, and
+the recipient accepts these terms.
+
+6. UPDATES, SUPPORT AND FUTURE LICENSING
+Updates, if any, are provided at the Licensor's discretion and are covered by
+this agreement unless they arrive with their own terms. The Licensor may change
+or discontinue the Software or its supported formats and operating systems.
+
+SPAStrip version 1.0.0 does not require a serial number or any activation. The
+Licensor may, in a later update, introduce serial numbers, activation on a
+limited number of computers, or similar licensing measures, and may make them a
+condition of using that update. Terms that accompany an update apply to that
+update, and if you do not accept them you should not install it. Nothing in
+this clause is a promise that any such measure will be introduced.
+
+7. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. THE LICENSOR DOES NOT
+WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR FREE, OR THAT IT WILL
+WORK WITH ANY PARTICULAR HOST OR HARDWARE.
+
+Nothing in this agreement excludes or limits any right, warranty or remedy you
+have under applicable consumer protection law that cannot lawfully be excluded
+or limited, including the Consumer Protection Act (Quebec) where it applies to
+you. Where such a law applies, the disclaimers and limits in clauses 7 and 8
+apply only to the extent that law permits, and the rest of this agreement
+continues in effect.
+
+8. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR SHALL NOT BE
+LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE
+DAMAGES, OR FOR ANY LOSS OF PROFITS, DATA, RECORDINGS OR GOODWILL, ARISING OUT
+OF OR RELATED TO THE SOFTWARE. THE LICENSOR'S TOTAL LIABILITY UNDER THIS
+AGREEMENT SHALL NOT EXCEED THE AMOUNT YOU PAID FOR THE LICENSE.
+
+9. SAFE LISTENING
+SPAStrip is an effects chain with distortion, resonant filters, feedback
+delays and a randomise function, and it can produce sudden, loud output,
+particularly when randomising a patch or driving it with a hot signal. Set a
+comfortable monitoring level before you play, and protect your hearing and your
+speakers.
+
+10. TERM AND TERMINATION
+This license takes effect when you install the Software and continues until
+terminated. It terminates automatically if you breach clause 4 or 5. On
+termination you must stop using the Software and remove all copies. Clauses 2,
+3, 4, 7, 8, 11 and 12 survive termination.
+
+11. GOVERNING LAW
+This agreement is governed by the laws of the Province of Quebec and the
+federal laws of Canada applicable there, without regard to conflict of laws
+rules. The courts of the judicial district of Montreal, Quebec have
+jurisdiction, except that nothing in this clause deprives a consumer of the
+right to bring proceedings where the law entitles them to do so.
+
+12. GENERAL
+This agreement is the entire agreement between you and the Licensor regarding
+the Software and supersedes any prior understanding, proposal or
+representation. If any provision is held invalid or unenforceable, it is to be
+read down or severed to the minimum extent necessary and the remainder stays in
+full effect. A failure or delay in enforcing a provision is not a waiver of it.
+The Licensor may assign this agreement in connection with a sale or
+reorganisation of its business; you may not assign it except under clause 5.
+
+13. THIRD-PARTY COMPONENTS AND FACTORY IMPULSE RESPONSES
+The Software is built with the JUCE framework (https://juce.com), used under
+its own license terms. [TODO-REVIEW: confirm the JUCE licence tier we hold,
+since the splash screen is disabled in the build, and that this sentence is
+accurate.]
+
+SPAStrip includes factory impulse responses (IRs) made by other people. Each
+one remains under the licence its author chose, and nothing in this agreement
+limits the rights that licence gives you or adds restrictions to it. Where
+clause 3 restricts redistribution of the Licensor's content, it does not apply
+to a factory impulse response to the extent its own licence allows more. The
+full list, with each author, source, licence and the changes we made, is in the
+file CREDITS.txt installed with the Software (see README.txt) and in the About
+dialog of the plugin.
+
+Some of the factory impulse responses are licensed under the Creative Commons
+Attribution 4.0 International licence (CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/), which requires that credit be
+given, and the others are CC0. In particular: "AKIR" impulse responses by
+Adventure Kid,
+https://www.adventurekid.se/akrt/free-reverb-impulse-responses/ . Where we
+converted, resampled, level-normalised or shortened an impulse response, the
+changes are described in CREDITS.txt.
+
+14. CONTACT
+Silverplatter Audio, Kenzora Games Inc., Quebec, Canada.
+https://www.silverplatteraudio.com
+[TODO-REVIEW: SPAGlitch's EULA gives a named email address as the contact.
+Replace the website line with the company support address we want customers to
+use, or keep the website only.]
+
+(c) Kenzora Games Inc. All rights reserved.
+Silverplatter Audio is a trademark of Kenzora Games Inc.

@@ -46,23 +46,39 @@ jobs:
           echo "version=$(sed -n 's/^project(SPAStrip VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
-      - name: Zip VST3
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $zip = "dist/SPAStrip-${{ steps.version.outputs.version }}-win64-vst3-${{ steps.version.outputs.sha }}.zip"
-          Compress-Archive -Path "build/SPAStrip_artefacts/Release/VST3/SPAStrip.vst3" -DestinationPath $zip -Force
-          Get-Item $zip
+      # README/QUICKSTART with the version filled in, the EULA, and CREDITS.txt
+      # (generated from assets/irs/CREDITS.md) for the installer to ship.
+      # SPASTRIP_ALLOW_TODO: CI builds are not releases; the release script
+      # (scripts/build_release.sh) is what refuses docs that still carry a TODO.
+      - name: Prepare installer docs
+        shell: bash
+        env:
+          SPASTRIP_ALLOW_TODO: "1"
+        run: ./scripts/prepare_docs.sh build/docs "${{ steps.version.outputs.version }}"
 
-      # Publish the zip to a draft release rather than via
+      - name: Build installer (Windows)
+        shell: cmd
+        # /O (output dir) is resolved relative to the working directory (repo
+        # root), NOT the .iss location like the Source paths, so use an
+        # absolute workspace path or the publish step finds nothing.
+        run: '"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.version.outputs.version }} /DArtefacts=..\..\build\SPAStrip_artefacts\Release /DDocsDir=..\..\build\docs /O"%GITHUB_WORKSPACE%\dist\installers" installers\windows\SPAStrip.iss'
+
+      - name: Check installer name
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "dist/installers/SPAStrip-${{ steps.version.outputs.version }}-Windows.exe"
+          ls -l dist/installers
+
+      # Publish the installer to a draft release rather than via
       # actions/upload-artifact (see the permissions note above). Drafts are
-      # invisible to the public on a public repo and their tag is not created
-      # as a real git ref until published, so this never pushes a visible tag.
-      # Re-runs on the same commit delete+recreate the draft (gh release view
-      # can't see drafts by tag -- only the list endpoint can -- so existence
-      # is checked via `gh api .../releases`). Skipped for pull requests from
-      # forks, whose token is read-only.
-      - name: Publish zip to draft release
+      # invisible to the public and their tag is not created as a real git ref
+      # until published, so this never pushes a visible tag. Re-runs on the same
+      # commit delete+recreate the draft (gh release view can't see drafts by
+      # tag, only the list endpoint can, so existence is checked via
+      # `gh api .../releases`). Skipped for pull requests from forks, whose
+      # token is read-only.
+      - name: Publish installer to draft release
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         shell: bash
         env:
@@ -71,7 +87,7 @@ jobs:
           set -euo pipefail
           SHORT_SHA="${GITHUB_SHA:0:7}"
           TAG="ci-windows-${SHORT_SHA}"
-          ZIP="$(ls "${GITHUB_WORKSPACE}"/dist/*.zip)"
+          EXE="$(ls "${GITHUB_WORKSPACE}"/dist/installers/*.exe)"
           NOTES="Automated Windows CI build from ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (commit ${GITHUB_SHA})."
 
           EXISTING_ID="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
@@ -81,7 +97,7 @@ jobs:
             gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${EXISTING_ID}"
           fi
 
-          gh release create "$TAG" "$ZIP" \
+          gh release create "$TAG" "$EXE" \
             --draft \
             --target "$GITHUB_SHA" \
             --title "CI Windows build ${{ steps.version.outputs.version }} @ ${SHORT_SHA}" \
