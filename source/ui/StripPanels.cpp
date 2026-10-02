@@ -121,7 +121,8 @@ void LevelMeter::paint (juce::Graphics& g)
     auto captionArea = area.removeFromLeft (30.0f);
     g.drawText (caption, captionArea, juce::Justification::centredLeft);
 
-    auto scale = showScale ? area.removeFromBottom (11.0f) : juce::Rectangle<float>();
+    if (showScale)
+        area.removeFromBottom (11.0f);
     const float laneH = juce::jmin (9.0f, (area.getHeight() - 3.0f) * 0.5f);
     const float totalH = laneH * 2.0f + 3.0f;
     area = area.withSizeKeepingCentre (area.getWidth(), totalH);
@@ -167,13 +168,17 @@ void LevelMeter::paint (juce::Graphics& g)
     {
         g.setColour (t.textSecondary.withAlpha (0.8f));
         g.setFont (metrics::smallFont());
+        const float scaleY = area.getBottom() + 1.0f;
+        const auto& f = g.getCurrentFont();
         for (const float db : { -48.0f, -36.0f, -24.0f, -12.0f, 0.0f })
         {
-            const float x = juce::jlimit (area.getX() + 9.0f, area.getRight() - 9.0f,
-                                          area.getX() + area.getWidth() * dbToFraction (db));
+            const float x = area.getX() + area.getWidth() * dbToFraction (db);
             const auto label = juce::String ((int) db);
-            g.drawText (label, juce::Rectangle<float> (x - 9.0f, scale.getY(), 18.0f, scale.getHeight()),
-                        juce::Justification::centred);
+            const float w = juce::GlyphArrangement::getStringWidth (f, label) + 2.0f;
+            // 0 dBFS is the right end of the bar: right-align its label there so it
+            // never collides with -12; the rest are centred on their true position.
+            const float left = db >= 0.0f ? area.getRight() - w : x - w * 0.5f;
+            g.drawText (label, juce::Rectangle<float> (left, scaleY, w, 11.0f), juce::Justification::centred);
         }
     }
 }

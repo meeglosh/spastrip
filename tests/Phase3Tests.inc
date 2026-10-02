@@ -305,7 +305,7 @@ namespace phase3Tests
             juce::Random rng (7 + i);
             proc->randomizeAll (rng);
         }
-        expect (proc->getAPVTS().getRawParameterValue (pid::eqBand (1, fx::eqband::gain))->load() == eqBefore
+        expect (std::abs (proc->getAPVTS().getRawParameterValue (pid::eqBand (1, fx::eqband::gain))->load() - eqBefore) < 1.0e-6f
                     && proc->getFxOrder().indexOf ((int) Module::eq) == slotBefore,
                 "a locked effect's parameters and chain slot survive Randomize All");
     }
@@ -391,7 +391,7 @@ namespace phase3Tests
         };
         find (content);
         for (int i = 0; i < content.getFxTabs().getNumTabs(); ++i)
-            if (auto* panel = content.getFxTabs().getTabContentComponent (i)) find (*panel);
+            if (auto* tabPanel = content.getFxTabs().getTabContentComponent (i)) find (*tabPanel);
         expect (fbKnob != nullptr && (bool) fbKnob->getProperties().getWithDefault ("modAssigned", false), "the assigned effect knob shows the assigned state");
         expect (fbKnob != nullptr && std::abs ((double) fbKnob->getProperties().getWithDefault ("modRangePos", 0.0) - 0.5) < 0.01
                     && (double) fbKnob->getProperties().getWithDefault ("modRangeNeg", 1.0) == 0.0, "reach arc = +0.5 (the slot's depth), nothing negative");
@@ -427,7 +427,7 @@ namespace phase3Tests
         };
         find2 (content);
         for (int i = 0; i < content.getFxTabs().getNumTabs(); ++i)
-            if (auto* panel = content.getFxTabs().getTabContentComponent (i)) find2 (*panel);
+            if (auto* tabPanel = content.getFxTabs().getTabContentComponent (i)) find2 (*tabPanel);
         expect (decay != nullptr && spa::mod::indexOf (fx::convDecay) < 0, "conv decay is an audited-excluded (non-modulatable) target");
         content.toggleModAssignment (fx::convDecay, 0);
         expect (proc->getModSlotTarget (0).isEmpty(), "assigning a non-modulatable parameter is refused");
@@ -470,11 +470,10 @@ namespace phase3Tests
         const auto wav = tmp.dir.getChildFile ("my-ir.wav");
         {
             juce::WavAudioFormat fmt;
-            std::unique_ptr<juce::FileOutputStream> out (wav.createOutputStream());
-            std::unique_ptr<juce::AudioFormatWriter> w (fmt.createWriterFor (out.get(), 48000.0, 2, 24, {}, 0));
+            std::unique_ptr<juce::OutputStream> out (wav.createOutputStream());
+            auto w = fmt.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (48000.0).withNumChannels (2).withBitsPerSample (24));
             if (w != nullptr)
             {
-                out.release();
                 juce::AudioBuffer<float> b (2, 4800);
                 juce::Random r (5);
                 for (int c = 0; c < 2; ++c)
@@ -669,7 +668,7 @@ namespace phase3Tests
         }
         expect (Editor::scaleThatFits ({ 0, 0, 1920, 1080 }, 1180, 740) == 1.0f, "a 1080p display gets 100%");
         expect (Editor::scaleThatFits ({ 0, 0, 1280, 720 }, 1180, 740) < 1.0f && Editor::scaleThatFits ({ 0, 0, 1280, 720 }, 1180, 740) >= 0.5f, "a 720p display gets a smaller scale, never below 50%");
-        expect (Editor::scaleThatFits ({ 0, 0, 800, 500 }, 1180, 740) == Editor::minScale, "a tiny display is clamped to 50%");
+        expect (std::abs (Editor::scaleThatFits ({ 0, 0, 800, 500 }, 1180, 740) - Editor::minScale) < 1.0e-6f, "a tiny display is clamped to 50%");
 
         // UI state is excluded from presets.
         {

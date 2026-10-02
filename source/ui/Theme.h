@@ -261,7 +261,7 @@ namespace metrics
     inline constexpr int brandBandHeight = 34;   // centred wordmark strip
     inline constexpr int headerHeight = 54;
     inline constexpr int footerHeight = 24;
-    inline constexpr int presetBrowserWidth = 320;   // drawer column (overlays the FX area)
+    inline constexpr int presetBrowserWidth = 337;   // incl. 10px shadow: visible edge (327) sits on the SIDECHAIN/MODULATION gutter
     inline constexpr int unit = 8;
     inline constexpr float cornerRadius = 7.0f;  // softer, elevated panels
 

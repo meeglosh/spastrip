@@ -239,7 +239,7 @@ void TextPromptDialog::layoutCard (juce::Rectangle<int> card)
 //==============================================================================
 SaveDialog::SaveDialog (juce::StringArray banks, juce::String initialName, juce::String initialBank, SaveFn save,
                         std::function<void()> onSaved)
-    : DialogOverlay ({ 400, 230 }), bankList (std::move (banks)), saveFn (std::move (save)), saved (std::move (onSaved))
+    : DialogOverlay ({ 400, 206 }), bankList (std::move (banks)), saveFn (std::move (save)), saved (std::move (onSaved))
 {
     for (auto* l : { &nameLabel, &bankLabel })
     {

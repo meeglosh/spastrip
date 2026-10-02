@@ -585,7 +585,7 @@ void ContentComponent::showAccentPicker()
 
 void ContentComponent::showMessage (const juce::String& title, const juce::String& body)
 {
-    showDialog (std::make_unique<MessageDialog> (title, body, juce::Point<int> (480, 300)));
+    showDialog (std::make_unique<MessageDialog> (title, body, juce::Point<int> (480, 256)));
 }
 
 void ContentComponent::showDialog (std::unique_ptr<DialogOverlay> d)
@@ -751,7 +751,11 @@ void ContentComponent::paint (juce::Graphics& g)
     g.setColour (t.textSecondary);
     g.setFont (metrics::smallFont());
     g.drawText ("v" SPASTRIP_VERSION, footer.reduced (12, 0), juce::Justification::centredLeft);
-    g.drawText ("Silverplatter Audio", footer.reduced (12, 0), juce::Justification::centredRight);
+    // Leave room for the editor's resize-corner grip (fixed ~20 editor px, so it
+    // covers 20 / scale content px).
+    const int gripRoom = juce::roundToInt (22.0f / juce::jmax (0.25f, getTransform().mat00));
+    g.drawText ("Silverplatter Audio", footer.withTrimmedLeft (12).withTrimmedRight (juce::jmax (12, gripRoom)),
+                juce::Justification::centredRight);
     g.setColour (juce::Colour (0xffe7ecef).withAlpha (0.8f));
     g.setFont (metrics::labelFont());
     g.drawText ("SPAStrip", footer, juce::Justification::centred);
