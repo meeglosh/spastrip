@@ -831,10 +831,10 @@ void DraggableTabButton::paintButton (juce::Graphics& g, bool over, bool down)
     // padlock when not (brighter while hovered).
     const bool locked = isLockedNow();
     const auto lr = getLockRect().toFloat();
-    const float h = juce::jmin (13.0f, lr.getHeight() - 2.0f);
+    const float h = juce::jmin (10.0f, lr.getHeight() - 2.0f);   // glyph is smaller than the (unchanged) click target
     const auto glyph = juce::Rectangle<float> (h * 0.78f, h).withCentre (lr.getCentre());
     const auto colour = locked ? t.assignSelected
-                               : t.textSecondary.withAlpha (lockHovered() ? 0.9f : 0.42f);
+                               : t.textSecondary.withAlpha (lockHovered() ? 0.9f : 0.34f);
     drawPadlockGlyph (g, glyph, colour, locked);
 }
 
@@ -976,7 +976,7 @@ void SPAStripLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rect
         // getTransformToScaleToFit(..., true) keeps proportions and centres
         // within whatever rect it's given, so shrinking-about-centre here
         // is all that's needed to shrink and re-centre the mark together.
-        constexpr float tickSizeFactor = 0.575f;  // ~55-60% of the V4 drawn size
+        constexpr float tickSizeFactor = 0.5f;    // ~50% of the V4 drawn size
         auto tickArea = iconArea.reduced (iconArea.getWidth() / 5, 0.0f);
         tickArea = tickArea.withSizeKeepingCentre (tickArea.getWidth() * tickSizeFactor,
                                                     tickArea.getHeight() * tickSizeFactor);

@@ -14,6 +14,7 @@
 #include "presets/PresetManager.h"
 #include "ui/Displays.h"
 #include "ui/SPAStripEditor.h"
+#include "ui/SPAStripLookAndFeel.h"
 #include "ui/UiSettings.h"
 
 namespace
@@ -544,6 +545,33 @@ int main (int argc, char** argv)
         pump (rig, 300);
         snap (*editor, outDir, "x_accent_dialog", false);
         content.dismissDialog();
+    }
+
+    // ---- (p) popup-menu rows: ticked / unticked / highlighted / disabled items -----
+    {
+        spa::ui::SPAStripLookAndFeel laf;
+        struct Row { const char* text; bool ticked; bool highlighted; bool active; };
+        const Row rows[] = { { "Stereo", true, false, true }, { "Mid / Side", false, false, true },
+                             { "Left Only", false, true, true }, { "Right Only", true, true, true },
+                             { "Mono (disabled)", true, false, false }, { "Bypass", false, false, true } };
+        for (float scale : { 1.0f, 2.0f })
+        {
+            const int w = 190, rowH = 24, pad = 4;
+            const int h = pad * 2 + rowH * (int) std::size (rows);
+            juce::Image img (juce::Image::ARGB, juce::roundToInt (w * scale), juce::roundToInt (h * scale), true);
+            juce::Graphics g (img);
+            g.addTransform (juce::AffineTransform::scale (scale));
+            laf.drawPopupMenuBackgroundWithOptions (g, w, h, juce::PopupMenu::Options());
+            int y = pad;
+            for (const auto& r : rows)
+            {
+                laf.drawPopupMenuItem (g, { 0, y, w, rowH }, false, r.active, r.highlighted, r.ticked, false,
+                                       r.text, {}, nullptr, nullptr);
+                y += rowH;
+            }
+            save (img, outDir.getChildFile (juce::String ("p_popup_menu_") + (scale > 1.5f ? "2x" : "1x") + ".png"));
+        }
+        std::cout << "  wrote p_popup_menu\n";
     }
 
     tmp.deleteRecursively();
