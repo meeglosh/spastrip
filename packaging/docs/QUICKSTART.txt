@@ -1,0 +1,53 @@
+SPAStrip Quickstart
+===================
+Version @VERSION@
+
+1. INSERT IT
+   Insert SPAStrip on a track or bus as an AU or VST3 effect. In Logic Pro,
+   for example, click an Audio FX slot on the channel strip and choose
+   Audio Units > Silverplatter Audio > SPAStrip. It starts with every effect
+   off, so it is transparent until you turn something on. Each effect has an
+   on/off switch in its tab.
+
+2. THE CHAIN
+   The tabs along the top of the window are the effects, in the order the
+   audio flows through them (left to right): FILTER, DIST, CHORUS, MOD,
+   TREM/VIB, GRAIN, DELAY, REVERB, CONV, EQ, COMP, LIMIT. Drag a tab to
+   a new position to reorder the chain; a drag is a single undo step.
+
+3. FILTERS
+   The FILTER tab is a multimode filter with low-pass, high-pass, band-pass
+   and notch modes at 12 and 24 dB per octave. The EQ tab is an eight-band
+   parametric EQ. Both can sit anywhere in the chain.
+
+4. RANDOMIZE ALL, WILD AND THE PADLOCKS
+   RANDOMIZE ALL rolls a new setting for every effect, in one undo step. The
+   WILD knob next to it sets how tame or unhinged the rolls are (double-click
+   it to return to the middle). The padlock on a tab keeps that effect as it
+   is through every roll: lock the ones you like, then roll the rest.
+
+5. SIDECHAIN AND MOD SLOTS
+   The modulation section follows a sidechain envelope: choose its SOURCE
+   (Input, or External for your DAW's sidechain; see README.txt for the
+   routing), set GAIN, ATTACK, RELEASE and HPF, and watch the ENVELOPE.
+   There are eight mod slots. Each slot has a picker for the parameter it
+   modulates and a DEPTH (positive or negative). The quick way: right-click
+   any knob that can be modulated and choose "Assign to mod slot N"; right-click
+   again to remove it.
+
+6. FACTORY IMPULSE RESPONSES
+   On the CONV tab, "Factory IR" lists nineteen built-in impulse responses
+   (springs, plates, rooms, halls, churches, tanks, tunnels, a forest). You
+   can also load your own WAV, AIFF or FLAC file, or drop one onto the panel.
+   Their credits are in CREDITS.txt and under the SPAStrip menu > About.
+   Long impulses at 4x oversampling are heavy on the CPU; see README.txt.
+
+7. PRESETS, UNDO AND COLOUR
+   Click the preset name to browse; SAVE stores your own, with an effect
+   type (Drums, Bass, Vocals, Guitar, Keys, Synth, FX, Mixbus, Mastering,
+   Creative) so you can filter by type later. INIT resets everything. The
+   undo and redo arrows (or Cmd/Ctrl+Z) step back through your changes,
+   including rolls and reordering. The round colour button in the header
+   changes SPAStrip's accent colour.
+
+Have fun. RANDOMIZE ALL is the tour guide.

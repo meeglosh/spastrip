@@ -1,0 +1,246 @@
+cmake_minimum_required(VERSION 3.24)
+
+# Minimum macOS we support. MUST be set before project() so it is baked into
+# every binary's LC_BUILD_VERSION (otherwise builds inherit the BUILD MACHINE's
+# OS). 11.0 is also the floor for arm64. Ignored on non-Apple platforms.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
+
+project(SPAStrip VERSION 1.0.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_XCODE_GENERATE_SCHEME OFF)
+
+# Short git commit + build date, resolved at CONFIGURE time (a CI checkout with
+# no .git / no git binary still configures cleanly and just shows "unknown").
+find_package(Git QUIET)
+set(SPASTRIP_GIT_COMMIT "unknown")
+if(Git_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE SPASTRIP_GIT_COMMIT_OUT
+        RESULT_VARIABLE SPASTRIP_GIT_RESULT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if(SPASTRIP_GIT_RESULT EQUAL 0 AND NOT SPASTRIP_GIT_COMMIT_OUT STREQUAL "")
+        set(SPASTRIP_GIT_COMMIT "${SPASTRIP_GIT_COMMIT_OUT}")
+    endif()
+endif()
+string(TIMESTAMP SPASTRIP_BUILD_DATE "%Y-%m-%d" UTC)
+
+# Universal binary is required for release; keep it opt-in for day-to-day
+# development because it doubles compile time.
+option(SPASTRIP_UNIVERSAL_BINARY "Build macOS universal binary (arm64 + x86_64)" OFF)
+
+# Copy built plugins into the system plugin folders (handy locally, breaks on
+# CI runners without admin rights -- CI passes OFF).
+option(SPASTRIP_COPY_PLUGIN "Copy plugins to system folders after build" ON)
+if(APPLE AND SPASTRIP_UNIVERSAL_BINARY)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
+endif()
+
+add_subdirectory(libs/JUCE)
+
+# AU + VST3 on macOS, VST3 on Windows. No Standalone, no AAX.
+if(APPLE)
+    set(SPASTRIP_FORMATS AU VST3)
+else()
+    set(SPASTRIP_FORMATS VST3)
+endif()
+
+juce_add_plugin(SPAStrip
+    COMPANY_NAME "Silverplatter Audio"
+    COMPANY_WEBSITE "https://www.silverplatteraudio.com"
+    BUNDLE_ID "com.silverplatteraudio.spastrip"
+    PLUGIN_MANUFACTURER_CODE SpAu
+    PLUGIN_CODE SpSt
+    FORMATS ${SPASTRIP_FORMATS}
+    PRODUCT_NAME "SPAStrip"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    COPY_PLUGIN_AFTER_BUILD ${SPASTRIP_COPY_PLUGIN}
+    VST3_CATEGORIES Fx
+    AU_MAIN_TYPE kAudioUnitType_Effect)
+
+# Give the AU and VST3 bundles their own CFBundleIdentifier. JUCE stamps one
+# shared BUNDLE_ID into every format, but macOS Installer tracks pkg payload
+# bundles BY bundle id: payloads sharing one id collide in PackageKit's upgrade
+# bookkeeping and an upgrade install can silently delete the AU right after
+# laying it down. Hosts identify the AU by type/subtype/manufacturer and the
+# VST3 by class UUID, so existing sessions are unaffected. JUCE generates each
+# format's Info.plist at configure time (juceaide, inside juce_add_plugin), so
+# patching here is deterministic.
+if(APPLE)
+    get_target_property(_spastrip_gen_dir SPAStrip JUCE_GENERATED_SOURCES_DIRECTORY)
+    foreach(_fmt_suffix "AU;au" "VST3;vst3")
+        list(GET _fmt_suffix 0 _fmt)
+        list(GET _fmt_suffix 1 _suffix)
+        execute_process(
+            COMMAND /usr/libexec/PlistBuddy
+                    -c "Set :CFBundleIdentifier com.silverplatteraudio.spastrip.${_suffix}"
+                    "${_spastrip_gen_dir}/SPAStrip_${_fmt}/Info.plist"
+            RESULT_VARIABLE _plist_result)
+        if(NOT _plist_result EQUAL 0)
+            message(FATAL_ERROR "Failed to set per-format bundle id for SPAStrip_${_fmt}")
+        endif()
+    endforeach()
+endif()
+
+# ---- Factory impulse responses ------------------------------------------------
+# Embedded with juce_add_binary_data, DRIVEN BY assets/irs/manifest.json at
+# CONFIGURE time: every entry with role "representative" (and only those -- the
+# "alternate" entries are not shipped) contributes its processed FLAC, and a
+# row of the generated table below. Generating the table here (rather than
+# checking in a hand-kept copy) means the shipped list cannot drift from the
+# manifest; a re-configure is triggered whenever the manifest changes, and
+# tests/SPAStripTests.cpp re-reads the manifest at run time and asserts the
+# embedded list matches it (so a stale build dir is caught too).
+set(SPASTRIP_IR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/irs)
+set(SPASTRIP_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SPASTRIP_IR_DIR}/manifest.json)
+file(READ ${SPASTRIP_IR_DIR}/manifest.json SPASTRIP_IR_MANIFEST)
+string(JSON SPASTRIP_IR_COUNT LENGTH "${SPASTRIP_IR_MANIFEST}" irs)
+set(SPASTRIP_IR_ROWS "")
+set(SPASTRIP_IR_FILES "")
+math(EXPR SPASTRIP_IR_LAST "${SPASTRIP_IR_COUNT} - 1")
+foreach(_i RANGE ${SPASTRIP_IR_LAST})
+    string(JSON _role GET "${SPASTRIP_IR_MANIFEST}" irs ${_i} role)
+    if(NOT _role STREQUAL "representative")
+        continue()
+    endif()
+    string(JSON _id   GET "${SPASTRIP_IR_MANIFEST}" irs ${_i} id)
+    string(JSON _name GET "${SPASTRIP_IR_MANIFEST}" irs ${_i} display_name)
+    string(JSON _cat  GET "${SPASTRIP_IR_MANIFEST}" irs ${_i} category)
+    string(JSON _file GET "${SPASTRIP_IR_MANIFEST}" irs ${_i} processed file)
+    if(NOT EXISTS ${SPASTRIP_IR_DIR}/${_file})
+        message(FATAL_ERROR "Factory IR '${_id}': ${SPASTRIP_IR_DIR}/${_file} is missing")
+    endif()
+    get_filename_component(_base ${_file} NAME)
+    foreach(_v _id _name _cat _base)
+        string(REPLACE "\\" "\\\\" ${_v} "${${_v}}")
+        string(REPLACE "\"" "\\\"" ${_v} "${${_v}}")
+    endforeach()
+    string(APPEND SPASTRIP_IR_ROWS "{ \"${_id}\", \"${_name}\", \"${_cat}\", \"${_base}\" },\n")
+    list(APPEND SPASTRIP_IR_FILES ${SPASTRIP_IR_DIR}/${_file})
+endforeach()
+file(WRITE ${SPASTRIP_GENERATED_DIR}/FactoryIRTable.inc.tmp "${SPASTRIP_IR_ROWS}")
+configure_file(${SPASTRIP_GENERATED_DIR}/FactoryIRTable.inc.tmp ${SPASTRIP_GENERATED_DIR}/FactoryIRTable.inc COPYONLY)
+
+juce_add_binary_data(SPAStripFactoryData
+    HEADER_NAME SPAStripFactoryData.h
+    NAMESPACE spa_factory_data
+    SOURCES ${SPASTRIP_IR_FILES} ${SPASTRIP_IR_DIR}/CREDITS.md)
+# Position-independent so the static data library links into the plugin bundles.
+set_target_properties(SPAStripFactoryData PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Brand logo (the SPAudio ring-and-disc mark, white), embedded for the editor.
+juce_add_binary_data(SPAStripBranding
+    HEADER_NAME SPAStripBrandingData.h
+    NAMESPACE spa_brand
+    SOURCES assets/branding/SPAudio_logo_white.svg)
+set_target_properties(SPAStripBranding PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+set(SPASTRIP_SOURCES
+    source/SPAStripProcessor.cpp
+    source/SPAStripProcessorEdit.cpp
+    source/params/Randomizer.cpp
+    source/presets/PresetManager.cpp
+    source/params/ParameterRegistry.cpp
+    source/mod/ModTargets.cpp
+    source/ir/FactoryIRs.cpp
+    source/dsp/FXChain.cpp
+    source/ui/ConvolvePanel.cpp
+    source/ui/Dialogs.cpp
+    source/ui/Displays.cpp
+    source/ui/FxPanel.cpp
+    source/ui/ModViz.cpp
+    source/ui/PresetBrowser.cpp
+    source/ui/SectionPanel.cpp
+    source/ui/SPAStripEditor.cpp
+    source/ui/SPAStripLookAndFeel.cpp
+    source/ui/StripPanels.cpp
+    source/ui/UiSettings.cpp)
+
+target_sources(SPAStrip PRIVATE ${SPASTRIP_SOURCES})
+
+target_include_directories(SPAStrip PRIVATE source ${SPASTRIP_GENERATED_DIR})
+
+target_compile_definitions(SPAStrip PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    SPASTRIP_VERSION="${PROJECT_VERSION}"
+    SPASTRIP_GIT_COMMIT="${SPASTRIP_GIT_COMMIT}"
+    SPASTRIP_BUILD_DATE="${SPASTRIP_BUILD_DATE}")
+
+target_link_libraries(SPAStrip
+    PRIVATE
+        SPAStripFactoryData
+        SPAStripBranding
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags)
+
+# Headless test target: compiles the same sources as the plugin (JUCE modules
+# are INTERFACE targets, so a console app is the supported way to reuse them).
+option(SPASTRIP_BUILD_TESTS "Build headless DSP/processor tests" ON)
+if(SPASTRIP_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(SPAStripTests PRODUCT_NAME "SPAStripTests")
+    target_sources(SPAStripTests PRIVATE tests/SPAStripTests.cpp ${SPASTRIP_SOURCES})
+    target_include_directories(SPAStripTests PRIVATE source ${SPASTRIP_GENERATED_DIR})
+    target_compile_definitions(SPAStripTests PRIVATE
+        SPASTRIP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        SPASTRIP_MOD_AUDIT=1
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        SPASTRIP_VERSION="${PROJECT_VERSION}"
+        SPASTRIP_GIT_COMMIT="${SPASTRIP_GIT_COMMIT}"
+        SPASTRIP_BUILD_DATE="${SPASTRIP_BUILD_DATE}")
+    target_link_libraries(SPAStripTests
+        PRIVATE
+            SPAStripFactoryData
+            SPAStripBranding
+            juce::juce_audio_utils
+            juce::juce_cryptography   # tests only: SHA-256 of the embedded FLACs vs the manifest
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME SPAStripTests COMMAND SPAStripTests)
+endif()
+
+# Headless screenshot tool: constructs the processor + editor off-screen, feeds test
+# audio and writes PNGs of the editor (see tools/SPAStripSnapshots.cpp).
+option(SPASTRIP_BUILD_SNAPSHOTS "Build the editor screenshot tool" ON)
+if(SPASTRIP_BUILD_SNAPSHOTS)
+    juce_add_console_app(SPAStripSnapshots PRODUCT_NAME "SPAStripSnapshots")
+    target_sources(SPAStripSnapshots PRIVATE tools/SPAStripSnapshots.cpp ${SPASTRIP_SOURCES})
+    target_include_directories(SPAStripSnapshots PRIVATE source ${SPASTRIP_GENERATED_DIR})
+    target_compile_definitions(SPAStripSnapshots PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        SPASTRIP_VERSION="${PROJECT_VERSION}"
+        SPASTRIP_GIT_COMMIT="${SPASTRIP_GIT_COMMIT}"
+        SPASTRIP_BUILD_DATE="${SPASTRIP_BUILD_DATE}")
+    target_link_libraries(SPAStripSnapshots
+        PRIVATE
+            SPAStripFactoryData
+            SPAStripBranding
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+endif()

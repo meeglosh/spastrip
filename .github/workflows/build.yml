@@ -1,0 +1,147 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes any still-running build of the same ref.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default. The Windows job overrides this to contents:write
+# because its build output is published as a draft GitHub Release asset rather
+# than an actions/upload-artifact (same approach as SPASynth: the account-wide
+# Actions artifact-storage quota is too small, and release assets don't count
+# against it). The macOS job keeps the inherited read-only permission.
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (x64)
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF
+
+      - name: Build (VST3 + tests)
+        run: cmake --build build --config Release --parallel --target SPAStrip_VST3 SPAStripTests
+
+      - name: Run tests
+        shell: bash
+        run: ./build/SPAStripTests_artefacts/Release/SPAStripTests.exe
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          echo "version=$(sed -n 's/^project(SPAStrip VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      # README/QUICKSTART with the version filled in, the EULA, and CREDITS.txt
+      # (generated from assets/irs/CREDITS.md) for the installer to ship.
+      # SPASTRIP_ALLOW_TODO: CI builds are not releases; the release script
+      # (scripts/build_release.sh) is what refuses docs that still carry a TODO.
+      - name: Prepare installer docs
+        shell: bash
+        env:
+          SPASTRIP_ALLOW_TODO: "1"
+        run: ./scripts/prepare_docs.sh build/docs "${{ steps.version.outputs.version }}"
+
+      - name: Build installer (Windows)
+        shell: cmd
+        # /O (output dir) is resolved relative to the working directory (repo
+        # root), NOT the .iss location like the Source paths, so use an
+        # absolute workspace path or the publish step finds nothing.
+        run: '"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.version.outputs.version }} /DArtefacts=..\..\build\SPAStrip_artefacts\Release /DDocsDir=..\..\build\docs /O"%GITHUB_WORKSPACE%\dist\installers" installers\windows\SPAStrip.iss'
+
+      - name: Check installer name
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "dist/installers/SPAStrip-${{ steps.version.outputs.version }}-Windows.exe"
+          ls -l dist/installers
+
+      # Publish the installer to a draft release rather than via
+      # actions/upload-artifact (see the permissions note above). Drafts are
+      # invisible to the public and their tag is not created as a real git ref
+      # until published, so this never pushes a visible tag. Re-runs on the same
+      # commit delete+recreate the draft (gh release view can't see drafts by
+      # tag, only the list endpoint can, so existence is checked via
+      # `gh api .../releases`). Skipped for pull requests from forks, whose
+      # token is read-only.
+      - name: Publish installer to draft release
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          TAG="ci-windows-${SHORT_SHA}"
+          EXE="$(ls "${GITHUB_WORKSPACE}"/dist/installers/*.exe)"
+          NOTES="Automated Windows CI build from ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (commit ${GITHUB_SHA})."
+
+          EXISTING_ID="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq ".[] | select(.tag_name == \"${TAG}\") | .id" | head -n1)"
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Draft release for ${TAG} already exists (id ${EXISTING_ID}) -- deleting before recreate."
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${EXISTING_ID}"
+          fi
+
+          gh release create "$TAG" "$EXE" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "CI Windows build ${{ steps.version.outputs.version }} @ ${SHORT_SHA}" \
+            --notes "$NOTES"
+
+      # Keep the last 5 CI draft releases and delete older ones so the draft
+      # list doesn't grow unbounded. Only touches drafts matching the
+      # ci-windows- prefix -- never a real, published release.
+      - name: Prune old CI draft releases
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t OLD_IDS < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq '[.[] | select(.draft == true and (.tag_name | startswith("ci-windows-")))]
+                  | sort_by(.created_at) | reverse | .[5:] | .[].id')
+          for id in "${OLD_IDS[@]:-}"; do
+            [ -n "$id" ] || continue
+            echo "Pruning old CI draft release id ${id}"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+          done
+
+  macos:
+    name: macOS (AU + VST3, universal)
+    runs-on: macos-14
+    # Manual only: macOS runners bill at 10x on a private repo (as in SPASynth).
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_UNIVERSAL_BINARY=ON
+
+      - name: Build (AU + VST3 + tests)
+        run: cmake --build build --config Release --parallel
+
+      - name: Check universal binaries
+        run: |
+          lipo -info build/SPAStrip_artefacts/Release/AU/SPAStrip.component/Contents/MacOS/SPAStrip
+          lipo -info build/SPAStrip_artefacts/Release/VST3/SPAStrip.vst3/Contents/MacOS/SPAStrip
+
+      - name: Run tests
+        run: ./build/SPAStripTests_artefacts/Release/SPAStripTests
