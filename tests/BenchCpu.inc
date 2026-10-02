@@ -6,7 +6,9 @@
 // (blockSize / sampleRate): mean, p99, max (all as % of budget) and the count of
 // blocks over budget. Keys (comma lists, defaults in brackets):
 //   sr=44100,48000 [48000]   block=32,..,1024 [128,512]   os=1,2,4 [1,2,4]
-//   ir=none|<factory id> [sixties-spring]   fx=conv|mix|owner|all [conv]
+//   ir=none|<factory id> [sixties-spring]   fx=conv|mix|owner|all|filter|none [conv]
+//     (filter = FILTER only: both filters, 24 dB, resonant and driven, in series; with slot=zero|ramp|held
+//      the slot targets filter 1 cutoff and a second slot filter 2 cutoff. none = no effect on)
 //   sc=off|silent|floor|live [silent]   slot=off|zero|ramp|held [off,zero,ramp,held]
 //   pace=0|1 (1 = one block per budget period, sleeping in between, like a real host) [0]
 //   secs=<audio seconds per config> [3]   dist=0|1 (distortion on) [0]
@@ -41,6 +43,20 @@ namespace benchCpu
         else if (fxSet == "owner")   // the field report: EQ, TREM/VIB, COMP, LIMIT (+ CONV below)
             for (auto* id : { pid::fx::eqEnable, pid::fx::tremEnable, pid::fx::vibEnable, pid::fx::compEnable, pid::fx::limEnable })
                 setParam (*proc, id, 1.0f);
+        else if (fxSet == "filter")
+        {
+            setParam (*proc, pid::fx::filterEnable, 1.0f);
+            setParam (*proc, pid::fx::filter2Enable, 1.0f);
+            setParam (*proc, pid::fx::filter1Type, 1.0f);      // LP 24
+            setParam (*proc, pid::fx::filter2Type, 5.0f);      // BP 24
+            setParam (*proc, pid::fx::filter1Cutoff, 2500.0f);
+            setParam (*proc, pid::fx::filter2Cutoff, 900.0f);
+            setParam (*proc, pid::fx::filter1Res, 0.6f);
+            setParam (*proc, pid::fx::filter2Res, 0.5f);
+            setParam (*proc, pid::fx::filter1Drive, 0.3f);
+            setParam (*proc, pid::fx::filter2Drive, 0.2f);
+            setParam (*proc, pid::fx::filter2Mix, 0.7f);
+        }
         else if (fxSet == "mix")
             for (auto* id : { pid::fx::modEnable, pid::fx::eqEnable, pid::fx::delayEnable })
                 setParam (*proc, id, 1.0f);
@@ -97,7 +113,12 @@ namespace benchCpu
 
         // Slot set-up.
         const bool haveSlot = slotMode != "off";
-        if (haveSlot) proc->setModSlotTarget (0, pid::fx::distTone);
+        if (haveSlot) proc->setModSlotTarget (0, fxSet == "filter" ? pid::fx::filter1Cutoff : pid::fx::distTone);
+        if (haveSlot && fxSet == "filter")
+        {
+            proc->setModSlotTarget (1, pid::fx::filter2Cutoff);
+            setParam (*proc, pid::modSlotDepth (1), 0.5f);
+        }
         const int totalBlocks = juce::jmax (200, (int) (secs * sr / block));
         if (slotMode == "held") setParam (*proc, pid::modSlotDepth (0), 0.5f);
 

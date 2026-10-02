@@ -12,6 +12,7 @@
 #include "ParametricEQ.h"
 #include "Multiband.h"
 #include "GrainFX.h"
+#include "MultiModeFilter.h"   // SPAStripAdded
 #include "Telemetry.h"
 #include "../params/LfoDivisions.h"
 
@@ -29,11 +30,15 @@ public:
 
     // Append-only: module ids are serialized in the per-preset chain order.
     // comp and grain were appended in 1.0.29 (numModules 9 -> 11).
+    // SPAStripAdded: filter is appended after them (numModules 11 -> 12); the
+    // DEFAULT order puts it FIRST in the chain, but its id stays 11.
     enum class Module { distortion, chorus, delay, reverb, eq, mod, tremVib, limiter, convolve,
-                        comp, grain };
-    static constexpr int numModules = 11;
+                        comp, grain, filter };
+    static constexpr int numModules = 12;
     // Modules in saved orders written before 1.0.29.
     static constexpr int legacyNumModules = 9;
+    // SPAStripAdded: modules in saved orders written before the FILTER module.
+    static constexpr int preFilterNumModules = 11;
 
     // Pack/unpack the chain order into a uint64 (4 bits/module): a single atomic
     // for the lock-free UI->audio hand-off and compact preset storage.
@@ -46,39 +51,63 @@ public:
     }
     static juce::uint64 defaultOrderPacked()
     {
-        Module def[numModules] { Module::distortion, Module::chorus, Module::mod,
+        Module def[numModules] { Module::filter,   // SPAStripAdded: first in the default chain
+                                 Module::distortion, Module::chorus, Module::mod,
                                  Module::tremVib, Module::grain, Module::delay,
                                  Module::reverb, Module::convolve, Module::eq,
                                  Module::comp, Module::limiter };
         return packOrder (def);
     }
 
-    // Unpack validates the value is a permutation. Three outcomes:
-    //  1. A full 11-module permutation: used as is.
-    //  2. A LEGACY nine-module value (every preset/session saved before
-    //     1.0.29; nibbles 9..15 are zero). The user's order is kept and the
-    //     two new modules are inserted by a fixed rule: GRAIN immediately
-    //     BEFORE DELAY, COMP immediately BEFORE LIMITER, wherever those two
-    //     sit in the user's order. Both default OFF, so this changes no sound.
-    //     (Reading nine nibbles as eleven would see two zeros, call the value
-    //     a duplicate and reset every custom order to the default.)
-    //  3. Anything else (corrupt): the natural enum order.
+    // Unpack validates the value is a permutation. Four outcomes:
+    //  1. A full 12-module permutation: used as is.
+    //  2. SPAStripAdded: a PRE-FILTER eleven-module value (every session and
+    //     preset saved before the FILTER module existed; nibble 11 is zero).
+    //     The user's order is kept and FILTER is inserted at slot 0, the
+    //     default position. It defaults OFF, so this changes no sound. (Reading
+    //     eleven nibbles as twelve would see a second zero, call the value a
+    //     duplicate and reset every custom order to the default.)
+    //  3. A LEGACY nine-module value (before 1.0.29; nibbles 9..15 are zero).
+    //     The user's order is kept and the two modules added then are inserted
+    //     by a fixed rule: GRAIN immediately BEFORE DELAY, COMP immediately
+    //     BEFORE LIMITER, wherever those two sit in the user's order. Then
+    //     FILTER goes to slot 0 as in 2. All default OFF: no sound changes.
+    //  4. Anything else (corrupt): the natural enum order.
     static void unpackOrder (juce::uint64 packed, Module* order)
     {
         if (readPermutation (packed, numModules, order))
             return;
 
-        Module legacy[legacyNumModules];
-        if ((packed >> (legacyNumModules * 4)) == 0
-            && readPermutation (packed, legacyNumModules, legacy))
+        Module preFilter[preFilterNumModules];
+        bool havePreFilter = false;
+
+        if ((packed >> (preFilterNumModules * 4)) == 0
+            && readPermutation (packed, preFilterNumModules, preFilter))
         {
-            int n = 0;
-            for (int i = 0; i < legacyNumModules; ++i)
+            havePreFilter = true;
+        }
+        else
+        {
+            Module legacy[legacyNumModules];
+            if ((packed >> (legacyNumModules * 4)) == 0
+                && readPermutation (packed, legacyNumModules, legacy))
             {
-                if (legacy[i] == Module::delay)   order[n++] = Module::grain;
-                if (legacy[i] == Module::limiter) order[n++] = Module::comp;
-                order[n++] = legacy[i];
+                int n = 0;
+                for (int i = 0; i < legacyNumModules; ++i)
+                {
+                    if (legacy[i] == Module::delay)   preFilter[n++] = Module::grain;
+                    if (legacy[i] == Module::limiter) preFilter[n++] = Module::comp;
+                    preFilter[n++] = legacy[i];
+                }
+                havePreFilter = true;
             }
+        }
+
+        if (havePreFilter)
+        {
+            order[0] = Module::filter;
+            for (int i = 0; i < preFilterNumModules; ++i)
+                order[i + 1] = preFilter[i];
             return;
         }
 
@@ -199,8 +228,26 @@ public:
         float grainMix = 0.35f;
         bool grainFreeze = false;
 
+        // SPAStripAdded: FILTER, two SVF filters (Series / Parallel). filterEnable
+        // is FILTER 1's switch (the module's own enable); filter 2 has its own.
+        // Cutoff in Hz, resonance / drive / mix 0..1, type = params::FilterType.
+        bool filterEnable = false;
+        int filterRouting = 0;             // 0 Series, 1 Parallel
+        int filter1Type = 0;
+        float filter1Cutoff = 20000.0f;
+        float filter1Resonance = 0.0f;
+        float filter1Drive = 0.0f;
+        float filter1Mix = 1.0f;
+        bool filter2Enable = false;
+        int filter2Type = 0;
+        float filter2Cutoff = 20000.0f;
+        float filter2Resonance = 0.0f;
+        float filter2Drive = 0.0f;
+        float filter2Mix = 1.0f;
+
         // Runtime FX processing order (drag-reorderable, saved per preset).
         Module order[numModules] {
+            Module::filter,   // SPAStripAdded
             Module::distortion, Module::chorus, Module::mod, Module::tremVib,
             Module::grain, Module::delay, Module::reverb, Module::convolve,
             Module::eq, Module::comp, Module::limiter
@@ -273,6 +320,11 @@ public:
     // Downsampled magnitude envelope of the shaped IR for the UI waveform.
     static constexpr int convEnvPoints = 256;
     const std::array<float, convEnvPoints>& convolutionEnvelope() const { return irEnvelope; }
+   #ifdef SPASTRIP_MOD_AUDIT
+    // SPAStripAdded, test target only: processFilter's coefficient glide can be
+    // switched off, so the zipper audit can report the numbers with and without it.
+    static std::atomic<bool>& filterGlideDisabledForAudit();
+   #endif
     // SPAStripAdded: partition sizes the convolution was prepared with (diagnostics / tests).
     int convolutionHeadSamples() const { return convHeadSize; }
     int convolutionChunkSamples() const { return convChunk; }
@@ -290,6 +342,7 @@ private:
     void processConvolve (juce::AudioBuffer<float>&, const Params&);
     void processComp (juce::AudioBuffer<float>&, const Params&);
     void processGrain (juce::AudioBuffer<float>&, const Params&);
+    void processFilter (juce::AudioBuffer<float>&, const Params&);   // SPAStripAdded
 
     static bool readPermutation (juce::uint64 packed, int count, Module* out)
     {
@@ -385,6 +438,21 @@ private:
 
     Multiband compEffect;
     GrainFX grainEffect;
+
+    // SPAStripAdded: FILTER module. Two TPT state-variable filters (the synth's
+    // MultiModeFilter, ported verbatim) plus the glue state that lives here
+    // rather than in the filter: the enable edges (state is cleared when a
+    // filter is switched on) and the cutoff / resonance / drive the filter was
+    // last run with, so the next call can glide to its new target instead of
+    // stepping coefficients (see processFilter).
+    struct FilterSlot
+    {
+        MultiModeFilter filter;
+        bool wasOn = false;
+        bool haveApplied = false;       // false: next call snaps instead of gliding
+        float appliedCutoff = 20000.0f, appliedResonance = 0.0f, appliedDrive = 0.0f;
+    };
+    std::array<FilterSlot, 2> filterSlots;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FXChain)
 };

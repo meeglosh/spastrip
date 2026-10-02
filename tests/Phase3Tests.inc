@@ -128,12 +128,12 @@ namespace phase3Tests
         // State changes while no editor exists show up when one opens.
         {
             auto p2 = makeProc (48000.0, 256);
-            p2->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 });
+            p2->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11 });
             p2->setLocked (Module::grain, true);
             p2->setRandomWildness (0.9f);
             setParam (*p2, fx::chorusEnable, 1.0f);
             auto ed = openEditor (*p2);
-            expect (orderNames (*ed) == "GRAIN,COMP,CONV,LIMIT,TREM/VIB,MOD,EQ,REVERB,DELAY,CHORUS,DIST",
+            expect (orderNames (*ed) == "GRAIN,COMP,CONV,LIMIT,TREM/VIB,MOD,EQ,REVERB,DELAY,CHORUS,DIST,FILTER",
                     "a chain order set while closed is what the opened editor shows: " + orderNames (*ed));
             expect (ed->getContent().getFxTabs().isTabLocked ("GRAIN") && ! ed->getContent().getFxTabs().isTabLocked ("DIST"),
                     "a lock set while closed shows on the opened editor");
@@ -177,9 +177,9 @@ namespace phase3Tests
         expect (uiOrder (*ed) == randomized, "after redo the tabs follow the order again");
 
         // A preset load with another order.
-        proc->setFxOrder ({ 3, 1, 4, 0, 2, 5, 6, 7, 8, 9, 10 });
+        proc->setFxOrder ({ 3, 1, 4, 0, 2, 5, 6, 7, 8, 9, 10, 11 });
         proc->getPresetManager().save ("Order A", {}, true);
-        proc->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 });
+        proc->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11 });
         content.tickForTest();
         expect (orderNames (*ed).startsWith ("GRAIN,COMP"), "manual setFxOrder shows");
         proc->getPresetManager().loadPreset (0);
@@ -188,9 +188,9 @@ namespace phase3Tests
 
         // Host state restore.
         juce::MemoryBlock blob;
-        proc->setFxOrder ({ 1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+        proc->setFxOrder ({ 1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 });
         proc->getStateInformation (blob);
-        proc->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 });
+        proc->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11 });
         content.tickForTest();
         proc->setStateInformation (blob.getData(), (int) blob.getSize());
         content.tickForTest();
@@ -278,7 +278,7 @@ namespace phase3Tests
             if (proc->isLocked ((Module) m) || tabs.isTabLocked (name))
                 expect (false, name + ": second click unlocks");
         }
-        expect (proc->getFxLockMask() == 0, "all 11 padlocks round-trip to the processor (lock then unlock)");
+        expect (proc->getFxLockMask() == 0, "all 12 padlocks round-trip to the processor (lock then unlock)");
 
         // A padlock click does not select the tab.
         const int before = tabs.getCurrentTabIndex();

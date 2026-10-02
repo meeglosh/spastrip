@@ -420,6 +420,15 @@ private:
         FxFloat grainPitch, grainSpread, grainSpreadPitch, grainPosition, grainReverse,
                 grainFeedback, grainMix;
         std::atomic<float>* grainFreeze = nullptr;
+
+        // SPAStripAdded: FILTER.
+        std::atomic<float>* filterEnable = nullptr;
+        std::atomic<float>* filterRouting = nullptr;
+        std::atomic<float>* filter1Type = nullptr;
+        FxFloat filter1Cutoff, filter1Res, filter1Drive, filter1Mix;
+        std::atomic<float>* filter2Enable = nullptr;
+        std::atomic<float>* filter2Type = nullptr;
+        FxFloat filter2Cutoff, filter2Res, filter2Drive, filter2Mix;
     };
 
     struct Raw

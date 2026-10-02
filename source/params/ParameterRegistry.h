@@ -37,6 +37,12 @@ enum class Section
     // SPAStrip phase 2: sidechain detector + modulation matrix (not effects).
     sidechain,
     modMatrix,
+    // SPAStrip: FILTER (two SVF filters, ported from SPASynth's filter section).
+    // Its parameters sit right after GRAIN in the registry (so the Randomize
+    // draw order of every existing parameter is unchanged), but its host
+    // parameter GROUP is last in allSections, so no existing parameter's host
+    // index moves.
+    fxFilter,
 };
 
 inline constexpr Section allSections[] = {
@@ -45,6 +51,7 @@ inline constexpr Section allSections[] = {
     Section::fxTremVib, Section::fxLimiter, Section::fxConvolve, Section::fxComp,
     Section::fxGrain,
     Section::sidechain, Section::modMatrix,
+    Section::fxFilter,
 };
 
 juce::String sectionName (Section);
@@ -245,6 +252,25 @@ namespace id
         inline constexpr const char* grainFeedback = "fxGrain.feedback";
         inline constexpr const char* grainMix      = "fxGrain.mix";
         inline constexpr const char* grainFreeze   = "fxGrain.freeze";
+
+        // FILTER (SPAStrip): two filters, Series / Parallel. fxFilter.enable is
+        // FILTER 1's own on/off (the module header's first toggle, default OFF
+        // here although the synth's FILTER 1 defaults on); filter 2 has its own.
+        // The synth's keytrack / env-amount are synth-only and not ported.
+        // New IDs on purpose: nothing maps across from a SPASynth preset.
+        inline constexpr const char* filterEnable   = "fxFilter.enable";
+        inline constexpr const char* filterRouting  = "fxFilter.routing";   // Series / Parallel
+        inline constexpr const char* filter1Type    = "fxFilter.f1.type";
+        inline constexpr const char* filter1Cutoff  = "fxFilter.f1.cutoff";
+        inline constexpr const char* filter1Res     = "fxFilter.f1.resonance";
+        inline constexpr const char* filter1Drive   = "fxFilter.f1.drive";
+        inline constexpr const char* filter1Mix     = "fxFilter.f1.mix";
+        inline constexpr const char* filter2Enable  = "fxFilter.f2.enable";
+        inline constexpr const char* filter2Type    = "fxFilter.f2.type";
+        inline constexpr const char* filter2Cutoff  = "fxFilter.f2.cutoff";
+        inline constexpr const char* filter2Res     = "fxFilter.f2.resonance";
+        inline constexpr const char* filter2Drive   = "fxFilter.f2.drive";
+        inline constexpr const char* filter2Mix     = "fxFilter.f2.mix";
     }
 }
 

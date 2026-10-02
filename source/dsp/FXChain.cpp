@@ -76,6 +76,8 @@ void FXChain::prepare (double newSampleRate, int maxBlockSize)
     eq.prepare (sampleRate, maxBlockSize);
     compEffect.prepare (sampleRate, maxBlockSize);
     grainEffect.prepare (sampleRate, maxBlockSize);
+    for (auto& slot : filterSlots)    // SPAStripAdded
+        slot.filter.prepare (sampleRate);
 
     reset();
 }
@@ -96,6 +98,12 @@ void FXChain::reset()
     eq.reset();
     compEffect.reset();
     grainEffect.reset();
+    for (auto& slot : filterSlots)    // SPAStripAdded
+    {
+        slot.filter.reset();
+        slot.wasOn = false;
+        slot.haveApplied = false;
+    }
 }
 
 double FXChain::tailSeconds (const Params& p) const
@@ -175,6 +183,11 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, const Params& params)
             // forget its ring when switched off (see GrainFX::process); the
             // disabled path is a one-branch early-out.
             case Module::grain:      processGrain (buffer, params); break;
+            // SPAStripAdded. Always invoked, like chorus / mod / grain: it tracks
+            // each filter's own enable edge so a filter switched back on starts
+            // from cleared state rather than whatever it held when it was last
+            // running. The all-off path is two compares and a return.
+            case Module::filter:     processFilter (buffer, params); break;
         }
     }
 }
@@ -430,6 +443,160 @@ void FXChain::processGrain (juce::AudioBuffer<float>& buffer, const Params& p)
     gp.mix        = p.grainMix;
     gp.freeze     = p.grainFreeze;
     grainEffect.process (buffer, gp);
+}
+
+#ifdef SPASTRIP_MOD_AUDIT
+// Test-target-only seam (see ModTargets.h's SPASTRIP_MOD_AUDIT): turns the
+// coefficient glide of processFilter off, to measure what it buys.
+std::atomic<bool>& FXChain::filterGlideDisabledForAudit()
+{
+    static std::atomic<bool> disabled { false };
+    return disabled;
+}
+#endif
+
+// SPAStripAdded: FILTER. Port of SPASynth's per-voice filter section
+// (SPASynthVoice.cpp) to an insert effect: filter 1 blends with the dry by its
+// MIX; Series feeds that into filter 2 (blended by its own MIX), Parallel runs
+// both on the raw input and averages them (0.5 x sum), exactly as the synth does.
+// filterEnable is filter 1's switch, filter2Enable filter 2's; a disabled filter
+// is a plain wire (in Parallel it still takes its half of the average, as in the
+// synth). No latency, no tail.
+//
+// Coefficient glide. MultiModeFilter::setParams is a whole-block setting: the
+// synth calls it per voice per block with a slow envelope behind it. Here the
+// cutoff arrives from the modulation matrix in steps (a new value every 8 host
+// samples, slewed over 4 ms) or from automation in steps of a whole host block,
+// and a step of the SVF's coefficients is audible as zipper noise. So the
+// filter is run in short sub-blocks, and between the cutoff / resonance / drive
+// of the previous call and this call's targets the sub-block values move on a
+// straight line (cutoff in LOG frequency, i.e. a constant number of octaves per
+// sample). MultiModeFilter itself is untouched. A filter that was just switched
+// on, or the first call after prepare / reset, snaps to its target.
+void FXChain::processFilter (juce::AudioBuffer<float>& buffer, const Params& p)
+{
+    const bool on[2] { p.filterEnable, p.filter2Enable };
+
+    for (int i = 0; i < 2; ++i)
+    {
+        auto& slot = filterSlots[(size_t) i];
+        if (on[i] && ! slot.wasOn)
+        {
+            slot.filter.reset();
+            slot.haveApplied = false;
+        }
+        slot.wasOn = on[i];
+    }
+
+    if (! on[0] && ! on[1])
+        return;
+
+    const int numSamples = buffer.getNumSamples();
+    const int numCh = juce::jmin (2, buffer.getNumChannels());
+    if (numSamples <= 0 || numCh <= 0)
+        return;
+
+    struct Target { params::FilterType type; float cutoff, resonance, drive, mix; };
+    const auto toType = [] (int t) { return (params::FilterType) juce::jlimit (0, 7, t); };
+    const Target targets[2] {
+        { toType (p.filter1Type), juce::jmax (1.0f, p.filter1Cutoff), juce::jlimit (0.0f, 1.0f, p.filter1Resonance),
+          juce::jlimit (0.0f, 1.0f, p.filter1Drive), juce::jlimit (0.0f, 1.0f, p.filter1Mix) },
+        { toType (p.filter2Type), juce::jmax (1.0f, p.filter2Cutoff), juce::jlimit (0.0f, 1.0f, p.filter2Resonance),
+          juce::jlimit (0.0f, 1.0f, p.filter2Drive), juce::jlimit (0.0f, 1.0f, p.filter2Mix) } };
+    const bool parallel = p.filterRouting == 1;
+
+   #ifdef SPASTRIP_MOD_AUDIT
+    const bool glide = ! filterGlideDisabledForAudit().load (std::memory_order_relaxed);
+   #else
+    constexpr bool glide = true;
+   #endif
+    // One setParams per call (the plain port) when the glide is switched off for the audit.
+    const int subBlock = glide ? 16 : numSamples;
+    const int numSub = (numSamples + subBlock - 1) / subBlock;
+
+    float logFrom[2], logTo[2];
+    for (int i = 0; i < 2; ++i)
+    {
+        auto& slot = filterSlots[(size_t) i];
+        if (! slot.haveApplied || ! glide)
+        {
+            slot.appliedCutoff = targets[i].cutoff;
+            slot.appliedResonance = targets[i].resonance;
+            slot.appliedDrive = targets[i].drive;
+        }
+        logFrom[i] = std::log (slot.appliedCutoff);
+        logTo[i] = std::log (targets[i].cutoff);
+    }
+
+    for (int sb = 0; sb < numSub; ++sb)
+    {
+        const int start = sb * subBlock;
+        const int len = juce::jmin (subBlock, numSamples - start);
+        const float t = (float) (sb + 1) / (float) numSub;   // the last sub-block lands on the target
+
+        for (int i = 0; i < 2; ++i)
+        {
+            if (! on[i])
+                continue;
+            auto& slot = filterSlots[(size_t) i];
+            const auto& tg = targets[i];
+            const float cutoff = juce::exactlyEqual (slot.appliedCutoff, tg.cutoff)
+                               ? tg.cutoff
+                               : std::exp (logFrom[i] + (logTo[i] - logFrom[i]) * t);
+            slot.filter.setParams (tg.type, cutoff,
+                                   slot.appliedResonance + (tg.resonance - slot.appliedResonance) * t,
+                                   slot.appliedDrive + (tg.drive - slot.appliedDrive) * t);
+        }
+
+        for (int ch = 0; ch < numCh; ++ch)
+        {
+            float* data = buffer.getWritePointer (ch) + start;
+            auto& f1 = filterSlots[0].filter;
+            auto& f2 = filterSlots[1].filter;
+            const float m1 = targets[0].mix, m2 = targets[1].mix;
+
+            for (int i = 0; i < len; ++i)
+            {
+                const float x = data[i];
+
+                // The filter always runs (its state must keep tracking the input);
+                // MIX 0 then returns the input itself, so a fully dry filter is a
+                // bit-exact wire rather than x + (y - x) * 0.
+                float out1 = x;
+                if (on[0])
+                {
+                    const float y = f1.processSample (ch, x);
+                    out1 = m1 > 0.0f ? x + (y - x) * m1 : x;
+                }
+
+                float out = out1;
+                if (on[1])
+                {
+                    if (parallel)
+                    {
+                        const float y = f2.processSample (ch, x);
+                        const float pb = m2 > 0.0f ? x + (y - x) * m2 : x;
+                        out = 0.5f * (out1 + pb);
+                    }
+                    else
+                    {
+                        const float y = f2.processSample (ch, out1);
+                        out = m2 > 0.0f ? out1 + (y - out1) * m2 : out1;
+                    }
+                }
+                data[i] = out;
+            }
+        }
+    }
+
+    for (int i = 0; i < 2; ++i)
+    {
+        auto& slot = filterSlots[(size_t) i];
+        slot.appliedCutoff = targets[i].cutoff;
+        slot.appliedResonance = targets[i].resonance;
+        slot.appliedDrive = targets[i].drive;
+        slot.haveApplied = true;
+    }
 }
 
 void FXChain::processConvolve (juce::AudioBuffer<float>& buffer, const Params& p)

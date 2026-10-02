@@ -21,6 +21,7 @@ juce::String sectionName (Section s)
         case Section::fxGrain:  return "FX Grain";
         case Section::sidechain: return "Sidechain";
         case Section::modMatrix: return "Mod Matrix";
+        case Section::fxFilter:  return "FX Filter";
     }
     return {};
 }
@@ -495,6 +496,51 @@ static std::vector<ParamDef> buildDefs()
     p.push_back ({ fx::grainFreeze, "Grain Freeze", Section::fxGrain,
                    ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
 
+    // FX FILTER (SPAStrip): two filters ported from SPASynth's filter section
+    // (MultiModeFilter). Appended after every existing FX parameter. Defaults and
+    // RandomSpecs are the synth's, except fxFilter.enable defaults OFF (an insert
+    // effect must not change the sound until it is switched on). The pass/ceiling
+    // rules that keep a roll from silencing the track are NOT specs: they are
+    // params::applyFilterGuards (Randomizer.cpp), applied after the draws.
+    {
+        const juce::StringArray filterTypes { "LP 12", "LP 24", "HP 12", "HP 24",
+                                              "BP 12", "BP 24", "Notch 12", "Notch 24" };
+        p.push_back ({ fx::filterEnable, "Filter 1 On", Section::fxFilter,
+                       ParamKind::boolParam, {}, 0.0f, "",
+                       { .enabled = true, .biasCentre = 0.8f, .biasStrength = 0.5f } });
+        p.push_back ({ fx::filterRouting, "Filter Routing", Section::fxFilter,
+                       ParamKind::choiceParam, {}, 0.0f, "", { .enabled = true },
+                       { "Series", "Parallel" } });
+
+        const struct { const char* type; const char* cutoff; const char* res; const char* drive;
+                       const char* mix; const char* prefix; } f[2] {
+            { fx::filter1Type, fx::filter1Cutoff, fx::filter1Res, fx::filter1Drive, fx::filter1Mix, "Filter 1 " },
+            { fx::filter2Type, fx::filter2Cutoff, fx::filter2Res, fx::filter2Drive, fx::filter2Mix, "Filter 2 " } };
+
+        for (int i = 0; i < 2; ++i)
+        {
+            const juce::String n = f[i].prefix;
+            if (i == 1)
+                p.push_back ({ fx::filter2Enable, n + "On", Section::fxFilter,
+                               ParamKind::boolParam, {}, 0.0f, "",
+                               { .enabled = true, .biasCentre = 0.3f, .biasStrength = 0.4f } });
+            p.push_back ({ f[i].type, n + "Type", Section::fxFilter,
+                           ParamKind::choiceParam, {}, 0.0f, "", { .enabled = true }, filterTypes });
+            p.push_back ({ f[i].cutoff, n + "Cutoff", Section::fxFilter,
+                           ParamKind::floatParam, frequencyRange (20.0f, 20000.0f), 20000.0f, "Hz",
+                           { .enabled = true, .minNorm = 0.2f, .biasCentre = 0.6f, .biasStrength = 0.3f } });
+            p.push_back ({ f[i].res, n + "Res", Section::fxFilter,
+                           ParamKind::floatParam, { 0.0f, 1.0f }, 0.0f, "",
+                           { .enabled = true, .maxNorm = 0.85f, .biasCentre = 0.3f, .biasStrength = 0.4f } });
+            p.push_back ({ f[i].drive, n + "Drive", Section::fxFilter,
+                           ParamKind::floatParam, { 0.0f, 1.0f }, 0.0f, "",
+                           { .enabled = true, .maxNorm = 0.7f, .biasCentre = 0.2f, .biasStrength = 0.5f } });
+            p.push_back ({ f[i].mix, n + "Mix", Section::fxFilter,
+                           ParamKind::floatParam, { 0.0f, 1.0f }, 1.0f, "",
+                           { .enabled = true, .minNorm = 0.5f, .biasCentre = 0.95f, .biasStrength = 0.5f },
+                           {}, true });
+        }
+    }
 
     // --- Sidechain detector (phase 2) --------------------------------------
     // Randomization is disabled for all of these: routing / detector set-up,

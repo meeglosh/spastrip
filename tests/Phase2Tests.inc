@@ -55,6 +55,12 @@ namespace phase2Tests
 
     using Stereo = std::array<std::vector<float>, 2>;
 
+    // FILTER audit set-up (--audit-mod ... <type> <resonance> [noglide]): the filter type and
+    // resonance the filter targets are measured at.
+    // `factorChoice` (--audit-mod ... [oversampling 0..2], applies to every target) is the oversampling choice index.
+    struct FilterAuditSetup { int type = 0; float resonance = 0.0f; int factorChoice = 0; };
+    FilterAuditSetup& filterAuditSetup() { static FilterAuditSetup s; return s; }
+
     // Puts the effect owning `id` into a state where `id` is audible, with the
     // parameter at normalised `baseNorm`. Returns the tone frequency to use.
     double prepareTarget (Proc& proc, const juce::String& id, float baseNorm, const juce::File& irFile)
@@ -81,6 +87,16 @@ namespace phase2Tests
             proc.serviceMessageThread();
         }
         if (id.startsWith ("fxGrain."))     { set (fx::grainMix, 0.5f); }
+        if (id.startsWith ("fxFilter."))
+        {
+            // Filter 1 on for any filter target; a filter 2 target also switches filter 2 on (in series,
+            // behind a filter 1 that is wide open). The audited filter runs at the set-up type/resonance.
+            const bool second = id.startsWith ("fxFilter.f2.");
+            set (fx::filterEnable, 1.0f);
+            if (second) set (fx::filter2Enable, 1.0f);
+            set (second ? fx::filter2Type : fx::filter1Type, (float) filterAuditSetup().type);
+            set (second ? fx::filter2Res : fx::filter1Res, filterAuditSetup().resonance);
+        }
         if (id.startsWith ("fxComp.band0")) toneHz = 90.0;
         if (id.startsWith ("fxComp.band2")) toneHz = 5000.0;
 
@@ -182,7 +198,7 @@ namespace phase2Tests
         const size_t from = (size_t) (1.0 * sr);
         const auto run = [&] (int interval, float d, float smooth)
         {
-            return renderTarget (id, interval, d, sr, irFile, seconds, cfg.envHz, baseNorm, 0, 64, cfg.square, smooth);
+            return renderTarget (id, interval, d, sr, irFile, seconds, cfg.envHz, baseNorm, filterAuditSetup().factorChoice, 64, cfg.square, smooth);
         };
         const auto base = run (32, 0.0f, 0.0f);
         AuditResult r;
@@ -360,10 +376,11 @@ namespace phase2Tests
         const auto* hpf = params::find ("sc.hpf");
         expect (std::abs (hpf->range.convertTo0to1 (std::sqrt (20.0f * 2000.0f)) - 0.5f) < 1.0e-3f, "sc.hpf is log-skewed (geometric centre at mid-travel)");
 
-        // Existing FX parameters are untouched: the FX count is still the synth's 159.
-        expect (params::numFxParams() == 159, "FX parameter count unchanged (159)");
+        // Existing FX parameters are untouched: the ported FX count is still the synth's 159;
+        // the FILTER module adds its own 13 on top.
+        expect (params::numFxParams() == 159 + 13, "FX parameter count is the ported 159 plus the 13 FILTER parameters");
         Proc proc;
-        expect (proc.getParameters().size() == 159 + 4 + 6 + 8, "host sees 159 FX + 4 global + 6 sidechain + 8 slot-depth parameters");
+        expect (proc.getParameters().size() == 159 + 13 + 4 + 6 + 8, "host sees 159 + 13 FX + 4 global + 6 sidechain + 8 slot-depth parameters");
         // Slot targets are not host parameters.
         bool anyTarget = false;
         for (auto* p : proc.getParameters())

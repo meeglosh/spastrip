@@ -597,46 +597,156 @@ namespace fxModuleTests
         }
     }
 
+    juce::uint64 packIds (const std::vector<int>& ids)
+    {
+        juce::uint64 v = 0;
+        for (size_t i = 0; i < ids.size(); ++i) v |= (juce::uint64) ids[i] << (i * 4);
+        return v;
+    }
+
+    bool orderIs (const FX::Module* out, const std::vector<int>& expected)
+    {
+        for (size_t i = 0; i < expected.size(); ++i)
+            if ((int) out[i] != expected[i])
+                return false;
+        return true;
+    }
+
     void fxOrderMigrationTest()
     {
         std::cout << "fxOrderMigrationTest\n";
-        // A custom nine-module order saved before 1.0.29.
-        const int legacyIds[9] { 8, 7, 4, 3, 6, 5, 2, 1, 0 };   // conv, limit, eq, reverb, trem, mod, delay, chorus, dist
-        juce::uint64 packed = 0;
-        for (int i = 0; i < 9; ++i) packed |= (juce::uint64) legacyIds[i] << (i * 4);
+        constexpr int F = (int) FX::Module::filter;   // 11
+        static_assert (FX::numModules == 12 && F == 11, "12 modules, filter appended as id 11");
         FX::Module out[FX::numModules];
+        FX::Module def[FX::numModules]; FX::unpackOrder (FX::defaultOrderPacked(), def);
+        expect (orderIs (def, { F, 0, 1, 5, 6, 10, 2, 3, 8, 4, 9, 7 }),
+                "the default order is filter, distortion, chorus, mod, trem/vib, grain, delay, reverb, convolve, eq, comp, limiter");
+
+        // --- A custom nine-module order saved before 1.0.29. ---
+        const std::vector<int> legacyIds { 8, 7, 4, 3, 6, 5, 2, 1, 0 };   // conv, limit, eq, reverb, trem, mod, delay, chorus, dist
+        const auto packed = packIds (legacyIds);
         FX::unpackOrder (packed, out);
-        const int expected[11] { 8, 9, 7, 4, 3, 6, 5, 10, 2, 1, 0 };   // COMP before LIMIT, GRAIN before DELAY
-        bool ok = true;
-        for (int i = 0; i < 11; ++i) ok = ok && (int) out[i] == expected[i];
-        expect (ok, "legacy nine-module order keeps the user's order, GRAIN before DELAY, COMP before LIMIT");
+        const std::vector<int> expected { F, 8, 9, 7, 4, 3, 6, 5, 10, 2, 1, 0 };   // FILTER first, COMP before LIMIT, GRAIN before DELAY
+        expect (orderIs (out, expected), "legacy nine-module order keeps the user's order, GRAIN before DELAY, COMP before LIMIT, FILTER first");
 
         // The old DEFAULT order maps onto the new default.
-        juce::uint64 oldDef = 0; const int od[9] { 0, 1, 5, 6, 2, 3, 8, 4, 7 };
-        for (int i = 0; i < 9; ++i) oldDef |= (juce::uint64) od[i] << (i * 4);
-        FX::unpackOrder (oldDef, out);
-        FX::Module def[FX::numModules]; FX::unpackOrder (FX::defaultOrderPacked(), def);
-        bool same = true; for (int i = 0; i < 11; ++i) same = same && out[i] == def[i];
-        expect (same, "old default order migrates to exactly the new default order");
+        FX::unpackOrder (packIds ({ 0, 1, 5, 6, 2, 3, 8, 4, 7 }), out);
+        bool same = true; for (int i = 0; i < FX::numModules; ++i) same = same && out[i] == def[i];
+        expect (same, "old nine-module default order migrates to exactly the new default order");
 
-        // A full 11-module order round-trips; corrupt falls back to natural.
+        // --- The pre-filter ELEVEN-module path (every session saved before the FILTER module). ---
+        // Its default: dist, chorus, mod, trem/vib, grain, delay, reverb, convolve, eq, comp, limiter.
+        const auto preFilterDefault = packIds ({ 0, 1, 5, 6, 10, 2, 3, 8, 4, 9, 7 });
+        FX::unpackOrder (preFilterDefault, out);
+        same = true; for (int i = 0; i < FX::numModules; ++i) same = same && out[i] == def[i];
+        expect (same, "the eleven-module default order migrates to exactly the new default (filter inserted at slot 0)");
+
+        // A custom eleven-module order: the user's order untouched, FILTER prepended.
+        const std::vector<int> custom11 { 7, 9, 3, 4, 8, 10, 2, 5, 6, 1, 0 };
+        FX::unpackOrder (packIds (custom11), out);
+        std::vector<int> want11 { F }; want11.insert (want11.end(), custom11.begin(), custom11.end());
+        expect (orderIs (out, want11), "a custom eleven-module order keeps its sequence with FILTER at slot 0");
+
+        // Order is reversed (every module in the opposite place), another custom order.
+        const std::vector<int> rev11 { 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+        FX::unpackOrder (packIds (rev11), out);
+        want11 = { F }; want11.insert (want11.end(), rev11.begin(), rev11.end());
+        expect (orderIs (out, want11), "a reversed eleven-module order migrates the same way");
+
+        // --- Fresh twelve-module values round-trip untouched. ---
         FX::unpackOrder (FX::packOrder (def), out);
-        bool rt = true; for (int i = 0; i < 11; ++i) rt = rt && out[i] == def[i];
-        expect (rt, "11-module order round-trips");
-        FX::unpackOrder (0xFFFFFFFFFFFFFFFFull, out);
-        bool nat = true; for (int i = 0; i < 11; ++i) nat = nat && (int) out[i] == i;
-        expect (nat, "corrupt value still falls back to the natural order");
+        same = true; for (int i = 0; i < FX::numModules; ++i) same = same && out[i] == def[i];
+        expect (same, "12-module default order round-trips");
+        bool allRoundTrip = true;
+        juce::Random rng (42);
+        for (int trial = 0; trial < 500; ++trial)
+        {
+            std::vector<int> ids; for (int i = 0; i < 12; ++i) ids.push_back (i);
+            for (int i = 11; i > 0; --i) std::swap (ids[(size_t) i], ids[(size_t) rng.nextInt (i + 1)]);
+            FX::unpackOrder (packIds (ids), out);
+            allRoundTrip = allRoundTrip && orderIs (out, ids);
+        }
+        expect (allRoundTrip, "500 random 12-module permutations all round-trip exactly (none misread as an eleven- or nine-module value)");
+        // The tricky ones: distortion (id 0) in the LAST slot leaves nibble 11 zero, like a pre-filter value.
+        const std::vector<int> zeroLast { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0 };
+        FX::unpackOrder (packIds (zeroLast), out);
+        expect (orderIs (out, zeroLast), "a twelve-module order ending in module 0 (upper nibble zero) is not mistaken for a pre-filter value");
+        const std::vector<int> filterLast { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+        FX::unpackOrder (packIds (filterLast), out);
+        expect (orderIs (out, filterLast), "filter in the last slot round-trips");
 
-        // Through the processor: a session carrying the legacy value.
-        spa::SPAStripProcessor proc; proc.prepareToPlay (48000.0, 512);
-        auto state = proc.getAPVTS().copyState();
-        state.setProperty ("fxOrder", (juce::int64) packed, nullptr);
-        juce::MemoryBlock mb;
-        if (auto xml = state.createXml()) juce::AudioProcessor::copyXmlToBinary (*xml, mb);
-        proc.setStateInformation (mb.getData(), (int) mb.getSize());
-        const auto ids = proc.getFxOrder();
-        bool pok = ids.size() == 11; for (int i = 0; pok && i < 11; ++i) pok = ids[i] == expected[i];
-        expect (pok, "setStateInformation with a legacy order loads the migrated custom order");
+        // --- Corrupt values fall back to the natural order. ---
+        const juce::uint64 corrupt[] {
+            0xFFFFFFFFFFFFFFFFull, 0ull,
+            packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10 }),        // duplicate, 12 nibbles
+            packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9 }),             // duplicate, 11 nibbles
+            packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 8 }),                // duplicate, 10 nibbles
+            packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11 }),            // 11 nibbles with an id out of the 0..10 range
+            packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12 }),        // id 12 (does not exist)
+            (1ull << 60) | packIds ({ 0, 1, 2, 3, 4, 5, 6, 7, 8 }),    // garbage above a legacy value
+        };
+        bool allNatural = true;
+        for (auto v : corrupt)
+        {
+            FX::unpackOrder (v, out);
+            bool nat = true; for (int i = 0; i < FX::numModules; ++i) nat = nat && (int) out[i] == i;
+            allNatural = allNatural && nat;
+        }
+        expect (allNatural, "corrupt values (all-ones, zero, duplicates at 10/11/12 nibbles, out-of-range ids, junk above a legacy value) fall back to the natural order");
+
+        // --- Through the processor. ---
+        const auto loadWithOrder = [] (juce::uint64 order, bool dropFilterParams, spa::SPAStripProcessor& proc)
+        {
+            auto state = proc.getAPVTS().copyState();
+            state.setProperty ("fxOrder", (juce::int64) order, nullptr);
+            if (dropFilterParams)   // what a session saved before the FILTER module looks like
+                for (int i = state.getNumChildren() - 1; i >= 0; --i)
+                    if (state.getChild (i).getProperty ("id").toString().startsWith ("fxFilter."))
+                        state.removeChild (i, nullptr);
+            juce::MemoryBlock mb;
+            if (auto xml = state.createXml()) juce::AudioProcessor::copyXmlToBinary (*xml, mb);
+            proc.setStateInformation (mb.getData(), (int) mb.getSize());
+        };
+        const auto idsAre = [] (const juce::Array<int>& ids, const std::vector<int>& want)
+        {
+            if (ids.size() != (int) want.size()) return false;
+            for (int i = 0; i < ids.size(); ++i) if (ids[i] != want[(size_t) i]) return false;
+            return true;
+        };
+
+        {
+            spa::SPAStripProcessor proc; proc.prepareToPlay (48000.0, 512);
+            loadWithOrder (packed, false, proc);
+            expect (idsAre (proc.getFxOrder(), expected), "setStateInformation with a legacy nine-module order loads the migrated custom order");
+        }
+        {
+            // A session saved with 11 modules: no fxFilter.* parameters in the state at all.
+            spa::SPAStripProcessor proc; proc.prepareToPlay (48000.0, 512);
+            setParam (proc, id::fx::distDrive, 0.77f);
+            setParam (proc, id::fx::chorusEnable, 1.0f);
+            loadWithOrder (packIds (custom11), true, proc);
+            std::vector<int> wantFull { F }; wantFull.insert (wantFull.end(), custom11.begin(), custom11.end());
+            expect (idsAre (proc.getFxOrder(), wantFull),
+                    "an eleven-module session loads with FILTER inserted at slot 0 and the rest in the saved order");
+            expect (getParam (proc, id::fx::filterEnable) < 0.5f && getParam (proc, id::fx::filter2Enable) < 0.5f,
+                    "...and the filter is OFF (both filters)");
+            expect (std::abs (getParam (proc, id::fx::distDrive) - 0.77f) < 1.0e-5f && getParam (proc, id::fx::chorusEnable) > 0.5f,
+                    "...everything else unchanged");
+            expect (getParam (proc, id::fx::filter1Cutoff) == 20000.0f && getParam (proc, id::fx::filter1Mix) == 1.0f
+                        && getParam (proc, id::fx::filterRouting) == 0.0f,
+                    "...and the missing filter parameters take their registry defaults");
+        }
+        {
+            // A fresh twelve-module order saved and restored by the plugin itself.
+            spa::SPAStripProcessor proc; proc.prepareToPlay (48000.0, 512);
+            const std::vector<int> custom12 { 5, 3, F, 0, 9, 1, 10, 4, 6, 8, 2, 7 };
+            juce::Array<int> arr; for (int v : custom12) arr.add (v);
+            proc.setFxOrder (arr);
+            juce::MemoryBlock mb; proc.getStateInformation (mb);
+            spa::SPAStripProcessor other; other.prepareToPlay (48000.0, 512);
+            other.setStateInformation (mb.getData(), (int) mb.getSize());
+            expect (idsAre (other.getFxOrder(), custom12), "a fresh twelve-module order survives getStateInformation / setStateInformation");
+        }
     }
 
 }

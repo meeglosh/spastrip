@@ -4,6 +4,7 @@
 #include "../mod/ModTargets.h"
 #include "CompPanel.h"
 #include "EqEditor.h"
+#include "FilterPanel.h"
 #include "LimiterDisplay.h"
 #include "SPAStripBrandingData.h"
 
@@ -47,7 +48,8 @@ namespace
     }
 
     const char* const kTabNames[dsp::FXChain::numModules] = { "DIST", "CHORUS", "DELAY", "REVERB", "EQ",
-                                                              "MOD", "TREM/VIB", "LIMIT", "CONV", "COMP", "GRAIN" };
+                                                              "MOD", "TREM/VIB", "LIMIT", "CONV", "COMP", "GRAIN",
+                                                              "FILTER" };
 }
 
 //==============================================================================
@@ -162,7 +164,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     auto& tel = processor.getTelemetry();
     auto& apvts = processor.getAPVTS();
     namespace fx = params::id::fx;
-    // Tabs are added in MODULE-ID order (DIST=0 .. GRAIN=10) and then reordered to the chain order.
+    // Tabs are added in MODULE-ID order (DIST=0 .. FILTER=11) and then reordered to the chain order.
     fxTabs.addTab ("DIST", tabBg, new FXPanel (apvts, FXDisplay::Kind::distortion, params::Section::fxDist, "Distortion",
                                                juce::StringArray { fx::distEnable }, &tel), true);
     fxTabs.addTab ("CHORUS", tabBg, new FXPanel (apvts, FXDisplay::Kind::chorus, params::Section::fxChorus, "Chorus",
@@ -182,6 +184,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     fxTabs.addTab ("COMP", tabBg, new CompPanel (apvts, tel), true);
     fxTabs.addTab ("GRAIN", tabBg, new FXPanel (apvts, FXDisplay::Kind::grain, params::Section::fxGrain, "Grain",
                                                 juce::StringArray { fx::grainEnable }, &tel), true);
+    fxTabs.addTab ("FILTER", tabBg, new FilterPanel (apvts, [this] { return processor.getSampleRate(); }), true);
     addAndMakeVisible (fxTabs);
 
     {
@@ -216,7 +219,8 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
             { "EQ",       { fx::eqEnable } },     { "MOD",    { fx::modEnable } },
             { "TREM/VIB", { fx::tremEnable, fx::vibEnable } },
             { "LIMIT",    { fx::limEnable } },    { "CONV",   { fx::convEnable } },
-            { "COMP",     { fx::compEnable } },   { "GRAIN",  { fx::grainEnable } } },
+            { "COMP",     { fx::compEnable } },   { "GRAIN",  { fx::grainEnable } },
+            { "FILTER",   { fx::filterEnable, fx::filter2Enable } } },
         fxTabs);
     fxTabs.isTabEngaged = [this] (const juce::String& n) { return tabEngagement != nullptr && tabEngagement->isEngaged (n); };
 

@@ -218,6 +218,17 @@ namespace
                 setParam (proc, pid::compBand (b, fx::compband::gain), 2.0f);
             }
         }
+        else if (name == "FILTER")
+        {
+            // Filter 1: 24 dB low-pass at 3.2 kHz with some resonance and drive; filter 2: 12 dB high-pass
+            // at 160 Hz, in series. Both on.
+            setParam (proc, fx::filterEnable, 1); setParam (proc, fx::filterRouting, 0);
+            setParam (proc, fx::filter1Type, 1); setParam (proc, fx::filter1Cutoff, 3200.0f); setParam (proc, fx::filter1Res, 0.5f);
+            setParam (proc, fx::filter1Drive, 0.25f); setParam (proc, fx::filter1Mix, 1.0f);
+            setParam (proc, fx::filter2Enable, 1);
+            setParam (proc, fx::filter2Type, 2); setParam (proc, fx::filter2Cutoff, 160.0f); setParam (proc, fx::filter2Res, 0.2f);
+            setParam (proc, fx::filter2Drive, 0.0f); setParam (proc, fx::filter2Mix, 0.85f);
+        }
         else if (name == "LIMIT")
         {
             setParam (proc, fx::limEnable, 1); setParam (proc, fx::limDrive, 7.0f); setParam (proc, fx::limCeiling, -1.0f);
@@ -242,7 +253,7 @@ int main (int argc, char** argv)
     std::cout << "SPAStripSnapshots -> " << outDir.getFullPathName() << "\n";
 
     const int baseW = spa::ui::metrics::baseWidth, baseH = spa::ui::metrics::baseHeight;
-    const juce::StringArray tabs { "DIST", "CHORUS", "MOD", "TREM/VIB", "GRAIN", "DELAY", "REVERB", "CONV", "EQ", "COMP", "LIMIT" };
+    const juce::StringArray tabs { "DIST", "CHORUS", "MOD", "TREM/VIB", "GRAIN", "DELAY", "REVERB", "CONV", "EQ", "COMP", "LIMIT", "FILTER" };
 
     // ---- (a) default state: nothing enabled, no sidechain bus ------------------
     {
@@ -291,7 +302,7 @@ int main (int argc, char** argv)
         rig.proc->setLocked (spa::dsp::FXChain::Module::distortion, true);
         rig.proc->setLocked (spa::dsp::FXChain::Module::reverb, true);
         rig.proc->setLocked (spa::dsp::FXChain::Module::grain, true);
-        rig.proc->setFxOrder ({ 0, 2, 3, 1, 10, 8, 4, 5, 6, 9, 7 });
+        rig.proc->setFxOrder ({ 11, 0, 2, 3, 1, 10, 8, 4, 5, 6, 9, 7 });
         rig.proc->getAPVTS().state.setProperty ("uiFxTab", "DELAY", nullptr);
         auto editor = std::make_unique<spa::SPAStripEditor> (*rig.proc);
         editor->setSize (baseW, baseH);
@@ -302,6 +313,34 @@ int main (int argc, char** argv)
         editor->getContent().selectTabForModule (3);
         pump (rig, 600);
         snap (*editor, outDir, "c_locks_mod_reverb");
+    }
+
+    // ---- (c2) FILTER with two mod slots (reach arcs), parallel routing, a band-pass, locked ---
+    {
+        Rig rig (2);
+        rig.process (150);
+        resetAll (*rig.proc);
+        configureEffect (*rig.proc, "FILTER");
+        setParam (*rig.proc, fx::filterRouting, 1);
+        setParam (*rig.proc, fx::filter2Type, 4); setParam (*rig.proc, fx::filter2Cutoff, 1100.0f); setParam (*rig.proc, fx::filter2Res, 0.7f);
+        setParam (*rig.proc, fx::filter2Mix, 0.7f);
+        rig.proc->setModSlotTarget (0, fx::filter1Cutoff);
+        rig.proc->setModSlotTarget (1, fx::filter2Res);
+        rig.proc->setModSlotTarget (2, fx::filter2Cutoff);
+        setParam (*rig.proc, pid::modSlotDepth (0), 0.4f);
+        setParam (*rig.proc, pid::modSlotDepth (1), -0.25f);
+        setParam (*rig.proc, pid::modSlotDepth (2), 0.3f);
+        rig.proc->setLocked (spa::dsp::FXChain::Module::filter, true);
+        rig.proc->getAPVTS().state.setProperty ("uiFxTab", "FILTER", nullptr);
+        auto editor = std::make_unique<spa::SPAStripEditor> (*rig.proc);
+        editor->setSize (baseW, baseH);
+        rig.process (300);
+        pump (rig, 1500);
+        snap (*editor, outDir, "c2_filter_mod_parallel");
+        // Everything off (the greyed preview) with the filters still configured.
+        setParam (*rig.proc, fx::filterEnable, 0); setParam (*rig.proc, fx::filter2Enable, 0);
+        pump (rig, 600);
+        snap (*editor, outDir, "c2_filter_off", false);
     }
 
     // ---- (d) preset drawer open ---------------------------------------------------

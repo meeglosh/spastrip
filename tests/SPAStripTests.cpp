@@ -28,6 +28,9 @@
 #include "mod/ModTargets.h"
 #include "presets/PresetManager.h"
 #include "ui/SPAStripEditor.h"
+#include "ui/FilterPanel.h"
+#include "dsp/FilterResponse.h"
+#include "params/Randomizer.h"
 #include "ui/UiSettings.h"
 #if JUCE_MAC
  #include <malloc/malloc.h>
@@ -75,7 +78,7 @@ namespace
         static const std::vector<const char*> ids {
             fx::distEnable, fx::chorusEnable, fx::delayEnable, fx::reverbEnable, fx::eqEnable,
             fx::modEnable, fx::tremEnable, fx::vibEnable, fx::limEnable, fx::convEnable,
-            fx::compEnable, fx::grainEnable };
+            fx::compEnable, fx::grainEnable, fx::filterEnable, fx::filter2Enable };
         return ids;
     }
 
@@ -280,14 +283,22 @@ namespace
         // number was obtained by dumping the synth registry (see report); it is
         // pinned here as a literal.
         constexpr int kSynthFxParamCount = 159;
+        // FILTER (added after the port) is new to the strip: enable, routing, filter 1 x5, filter 2 x6.
+        constexpr int kFilterParamCount = 13;
         const int stripFx = params::numFxParams();
+        int stripFxWithoutFilter = 0;
+        for (const auto& d : params::all())
+            if (d.section != params::Section::global && d.section != params::Section::sidechain
+                && d.section != params::Section::modMatrix && d.section != params::Section::fxFilter)
+                ++stripFxWithoutFilter;
         std::cout << "  SPASynth FX parameter count: " << kSynthFxParamCount
-                  << "   SPAStrip FX parameter count: " << stripFx << "\n";
-        expect (stripFx == kSynthFxParamCount, "FX parameter count equals the synth registry's (" + juce::String (stripFx) + " vs " + juce::String (kSynthFxParamCount) + ")");
+                  << "   SPAStrip FX parameter count: " << stripFx << " (" << stripFxWithoutFilter << " ported + FILTER)\n";
+        expect (stripFxWithoutFilter == kSynthFxParamCount, "the ported FX parameter count equals the synth registry's (" + juce::String (stripFxWithoutFilter) + " vs " + juce::String (kSynthFxParamCount) + ")");
+        expect (stripFx == kSynthFxParamCount + kFilterParamCount, "FX parameter count is the synth's plus the " + juce::String (kFilterParamCount) + " FILTER parameters (" + juce::String (stripFx) + ")");
 
         Proc proc;
         const int hostParams = proc.getParameters().size();
-        expect (hostParams == kSynthFxParamCount + 4 + 6 + 8, "host sees FX params + 4 globals + 6 sidechain + 8 mod-slot depths (" + juce::String (hostParams) + ")");
+        expect (hostParams == kSynthFxParamCount + kFilterParamCount + 4 + 6 + 8, "host sees FX params + 4 globals + 6 sidechain + 8 mod-slot depths (" + juce::String (hostParams) + ")");
 
         std::set<juce::String> ids;
         bool unique = true;
@@ -421,7 +432,7 @@ namespace
             for (auto* node : proc.getParameterTree())
                 if (node->getGroup() != nullptr)
                     ++topGroups;
-            expect (topGroups == 14, "14 host parameter groups (Global + 11 effects + Sidechain + Mod Matrix) (got " + juce::String (topGroups) + ")");
+            expect (topGroups == 15, "15 host parameter groups (Global + 12 effects + Sidechain + Mod Matrix) (got " + juce::String (topGroups) + ")");
         }
     }
 
@@ -433,7 +444,7 @@ namespace
         using FX = spa::dsp::FXChain;
         // pack/unpack round trip for a non-default permutation.
         const FX::Module perm[FX::numModules] { FX::Module::limiter, FX::Module::grain, FX::Module::convolve, FX::Module::comp,
-            FX::Module::eq, FX::Module::reverb, FX::Module::delay, FX::Module::tremVib, FX::Module::mod,
+            FX::Module::filter, FX::Module::eq, FX::Module::reverb, FX::Module::delay, FX::Module::tremVib, FX::Module::mod,
             FX::Module::chorus, FX::Module::distortion };
         FX::Module back[FX::numModules];
         FX::unpackOrder (FX::packOrder (perm), back);
@@ -565,7 +576,7 @@ namespace
         setParam (*a, pid::fx::convStart, 0.1f);
         setParam (*a, pid::fx::convMix, 0.77f);
         setParam (*a, pid::fx::grainFreeze, 1.0f);
-        juce::Array<int> custom { 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+        juce::Array<int> custom { 10, 9, 8, 7, 6, 11, 5, 4, 3, 2, 1, 0 };
         a->setFxOrder (custom);
 
         juce::MemoryBlock stateA;
@@ -1118,6 +1129,66 @@ namespace
             expect (g_allocCount.load() == 0, juce::String (1 << factorChoice) + "x, " + (variant == 0 ? "external sidechain" : variant == 1 ? "input source" : "external + listen toggling")
                     + ", 8 active slots, all effects on: 200 blocks performed no heap allocation (" + juce::String ((juce::int64) g_allocCount.load()) + " allocations seen)");
         }
+        // FILTER: both filters on (24 dB, resonant, driven), four filter targets modulated hard by a
+        // fast sidechain, parameters moving, all three oversampling factors.
+        for (int factorChoice = 0; factorChoice < 3; ++factorChoice)
+        {
+            auto proc = makeProc (48000.0, 256, 2, 2, 2);
+            setAllEffects (*proc, false);
+            setParam (*proc, pid::oversampling, (float) factorChoice);
+            namespace fxid = pid::fx;
+            setParam (*proc, fxid::filterEnable, 1.0f);
+            setParam (*proc, fxid::filter2Enable, 1.0f);
+            setParam (*proc, fxid::filter1Type, 1.0f);
+            setParam (*proc, fxid::filter2Type, 5.0f);
+            setParam (*proc, fxid::filter1Res, 0.8f);
+            setParam (*proc, fxid::filter2Res, 0.7f);
+            setParam (*proc, fxid::filter1Drive, 0.6f);
+            setParam (*proc, fxid::filter2Drive, 0.4f);
+            setParam (*proc, fxid::filter1Cutoff, 600.0f);
+            setParam (*proc, fxid::filter2Cutoff, 1500.0f);
+            setParam (*proc, pid::sc::attack, 0.5f);
+            proc->setModSlotTarget (0, fxid::filter1Cutoff); setParam (*proc, pid::modSlotDepth (0), 0.8f);
+            proc->setModSlotTarget (1, fxid::filter2Cutoff); setParam (*proc, pid::modSlotDepth (1), -0.8f);
+            proc->setModSlotTarget (2, fxid::filter1Res);    setParam (*proc, pid::modSlotDepth (2), 0.5f);
+            proc->setModSlotTarget (3, fxid::filter2Mix);    setParam (*proc, pid::modSlotDepth (3), -0.5f);
+            juce::AudioBuffer<float> buf (4, 256);
+            juce::MidiBuffer midi;
+            Noise nz (8);
+            long pos = 0;
+            const auto fill = [&]
+            {
+                for (int i = 0; i < 256; ++i, ++pos)
+                {
+                    const float gate = (pos / 700) % 2 == 0 ? 1.0f : 0.05f;
+                    for (int c = 0; c < 4; ++c) buf.setSample (c, i, c < 2 ? 0.4f * nz.next() : gate * 0.8f * nz.next());
+                }
+            };
+            fill();
+            proc->processBlock (buf, midi);
+            proc->serviceMessageThread();
+            for (int i = 0; i < 30; ++i) { fill(); proc->processBlock (buf, midi); }
+
+            malloc_logger = spaStripMallocLogger;
+            g_allocCount = 0;
+            g_countAllocs = true;
+            for (int i = 0; i < 200; ++i)
+            {
+                if (i % 40 == 20)
+                {
+                    g_countAllocs = false;
+                    setParam (*proc, fxid::filter1Cutoff, 300.0f + 7.0f * (float) i);
+                    setParam (*proc, fxid::filter2Type, (float) (i / 40 % 8));
+                    setParam (*proc, fxid::filterRouting, (float) (i / 40 % 2));
+                    g_countAllocs = true;
+                }
+                fill();
+                proc->processBlock (buf, midi);
+            }
+            g_countAllocs = false;
+            malloc_logger = nullptr;
+            expect (g_allocCount.load() == 0, juce::String (1 << factorChoice) + "x, FILTER (both filters, 24 dB, four modulated targets, type / routing / cutoff changing): 200 blocks performed no heap allocation (" + juce::String ((juce::int64) g_allocCount.load()) + " allocations seen)");
+        }
        #else
         std::cout << "  (skipped: allocation hook is macOS-only)\n";
        #endif
@@ -1228,6 +1299,7 @@ namespace
 #include "Phase2Tests.inc"
 #include "Phase2bTests.inc"
 #include "Phase3Tests.inc"
+#include "FilterTests.inc"
 #include "BenchCpu.inc"
 }
 
@@ -1259,6 +1331,11 @@ int main (int argc, char** argv)
         cfg.square = argc >= 6 && juce::String (argv[5]) == "square";
         if (argc >= 7) cfg.shipSmoothMs = (float) juce::String (argv[6]).getDoubleValue();   // what-if for the "shipping default" column
         if (argc >= 8) cfg.shipInterval = juce::String (argv[7]).getIntValue();
+        // FILTER targets: [type 0..7] [resonance 0..1] [noglide]
+        if (argc >= 9)  phase2Tests::filterAuditSetup().type = juce::String (argv[8]).getIntValue();
+        if (argc >= 10) phase2Tests::filterAuditSetup().resonance = (float) juce::String (argv[9]).getDoubleValue();
+        if (argc >= 12) phase2Tests::filterAuditSetup().factorChoice = juce::String (argv[11]).getIntValue();
+        spa::dsp::FXChain::filterGlideDisabledForAudit().store (argc >= 11 && juce::String (argv[10]) == "noglide");
         phase2Tests::auditModTargets (argc >= 3 ? juce::String (argv[2]) : juce::String(),
                                       argc >= 4 ? juce::String (argv[3]).getDoubleValue() : 48000.0, cfg);
         return 0;
@@ -1274,10 +1351,12 @@ int main (int argc, char** argv)
 
     // `SPAStripTests --ui-only` runs just the editor tests (quick; used with `leaks --atExit`).
     const bool uiOnly = argc >= 2 && juce::String (argv[1]) == "--ui-only";
+    // `SPAStripTests --filter-only` runs just the FILTER module tests.
+    const bool filterOnly = argc >= 2 && juce::String (argv[1]) == "--filter-only";
 
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
-#define RUN(fn) do { if (! uiOnly || juce::String (#fn).startsWith ("phase3Tests::")) { ++run; fn(); } } while (false)
+#define RUN(fn) do { if ((! uiOnly || juce::String (#fn).startsWith ("phase3Tests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
@@ -1382,6 +1461,19 @@ int main (int argc, char** argv)
     RUN (phase3Tests::drawerAndDialogsTest);
     RUN (phase3Tests::metersAndSidechainUiTest);
     RUN (phase3Tests::accentSettingsTest);
+    // --- FILTER module ------------------------------------------------------------
+    RUN (filterTests::filterResponseTest);
+    RUN (filterTests::filterRoutingTest);
+    RUN (filterTests::filterTransparencyTest);
+    RUN (filterTests::filterEnableEdgeTest);
+    RUN (filterTests::filterGlideTest);
+    RUN (filterTests::filterStabilityTest);
+    RUN (filterTests::guardRulesTest);
+    RUN (filterTests::rollGuardTest);
+    RUN (filterTests::lockAndSlotTest);
+    RUN (filterTests::modTargetsTest);
+    RUN (filterTests::stateRoundTripTest);
+    RUN (filterTests::filterPanelUiTest);
     RUN (benchCpu::cpuCostRegressionTest);
 #undef RUN
     testPresetsRoot.deleteRecursively();

@@ -222,6 +222,21 @@ SPAStripProcessor::SPAStripProcessor()
     bind (r.grainMix, fx::grainMix);
     r.grainFreeze = rp (fx::grainFreeze);
 
+    // SPAStripAdded: FILTER.
+    r.filterEnable = rp (fx::filterEnable);
+    r.filterRouting = rp (fx::filterRouting);
+    r.filter1Type = rp (fx::filter1Type);
+    bind (r.filter1Cutoff, fx::filter1Cutoff);
+    bind (r.filter1Res, fx::filter1Res);
+    bind (r.filter1Drive, fx::filter1Drive);
+    bind (r.filter1Mix, fx::filter1Mix);
+    r.filter2Enable = rp (fx::filter2Enable);
+    r.filter2Type = rp (fx::filter2Type);
+    bind (r.filter2Cutoff, fx::filter2Cutoff);
+    bind (r.filter2Res, fx::filter2Res);
+    bind (r.filter2Drive, fx::filter2Drive);
+    bind (r.filter2Mix, fx::filter2Mix);
+
     // Modulation target table: index i of mod::targets() -> its FxFloat. (Every
     // float FX parameter is bound above; excluded ones simply have no entry.)
     targetFx.assign (mod::targets().size(), nullptr);
@@ -1066,6 +1081,21 @@ void SPAStripProcessor::updateFXParams()
     p.grainFeedback    = rf.grainFeedback.get();
     p.grainMix         = rf.grainMix.get();
     p.grainFreeze      = rf.grainFreeze->load() >= 0.5f;
+
+    // SPAStripAdded: FILTER.
+    p.filterEnable     = rf.filterEnable->load() >= 0.5f;
+    p.filterRouting    = (int) rf.filterRouting->load();
+    p.filter1Type      = (int) rf.filter1Type->load();
+    p.filter1Cutoff    = rf.filter1Cutoff.get();
+    p.filter1Resonance = rf.filter1Res.get();
+    p.filter1Drive     = rf.filter1Drive.get();
+    p.filter1Mix       = rf.filter1Mix.get();
+    p.filter2Enable    = rf.filter2Enable->load() >= 0.5f;
+    p.filter2Type      = (int) rf.filter2Type->load();
+    p.filter2Cutoff    = rf.filter2Cutoff.get();
+    p.filter2Resonance = rf.filter2Res.get();
+    p.filter2Drive     = rf.filter2Drive.get();
+    p.filter2Mix       = rf.filter2Mix.get();
 
     desiredLatency.store (fxChain.limiterLatencySamples (p), std::memory_order_relaxed);
     p.bpm = blockBpm;

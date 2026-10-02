@@ -258,7 +258,7 @@ juce::String PresetBrowser::describeImport (const preset::PresetManager::ImportR
     switch (r.order)
     {
         case R::Order::applied:         lines.add ("Effect order: applied."); break;
-        case R::Order::migratedLegacy:  lines.add ("Effect order: applied (older 9-effect order, COMP and GRAIN appended)."); break;
+        case R::Order::migratedLegacy:  lines.add ("Effect order: applied (older order: COMP and GRAIN and FILTER added where it had none)."); break;
         case R::Order::invalid:         lines.add ("Effect order: invalid in the file, natural order used."); break;
         case R::Order::notInFile:       lines.add ("Effect order: not in the file, default order used."); break;
     }

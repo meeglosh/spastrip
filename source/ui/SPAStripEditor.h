@@ -26,7 +26,7 @@ namespace ui
 //
 //   brand band   wordmark + sub-line
 //   header       logo/menu | < preset > SAVE INIT undo redo | WILD RANDOMIZE ALL | OS | accent
-//   FX area      11 drag-reorderable tabs (grip, bold when engaged, padlock) + the tab's panel
+//   FX area      12 drag-reorderable tabs (grip, bold when engaged, padlock) + the tab's panel
 //   bottom row   SIDECHAIN | MODULATION (8 slots) | INPUT / OUTPUT
 //   footer       version / name / maker
 class ContentComponent : public juce::Component,

@@ -24,11 +24,12 @@ namespace
         return def != nullptr && params::moduleForSection (def->section).has_value();
     }
 
-    // A saved order from before 1.0.29: nine nibbles forming a permutation of the
-    // nine original modules, nothing above them.
-    bool isLegacyNineModuleOrder (juce::uint64 packed)
+    // A saved order from before 1.0.29 (nine nibbles forming a permutation of the
+    // nine original modules, nothing above them) or, SPAStripAdded, from before the
+    // FILTER module (eleven nibbles, the synth's own current order). Both are
+    // widened by FXChain::unpackOrder.
+    bool isLegacyModuleOrder (juce::uint64 packed, int n)
     {
-        constexpr int n = dsp::FXChain::legacyNumModules;
         if ((packed >> (n * 4)) != 0)
             return false;
         unsigned seen = 0;
@@ -188,7 +189,8 @@ PresetManager::ImportResult PresetManager::importSPASynthPreset (const juce::Fil
         incoming.setProperty ("fxOrder", (juce::int64) normalised, nullptr);
         if (normalised == packed)
             r.order = ImportResult::Order::applied;
-        else if (isLegacyNineModuleOrder (packed))
+        else if (isLegacyModuleOrder (packed, dsp::FXChain::legacyNumModules)
+                 || isLegacyModuleOrder (packed, dsp::FXChain::preFilterNumModules))
             r.order = ImportResult::Order::migratedLegacy;
         else
             r.order = ImportResult::Order::invalid;

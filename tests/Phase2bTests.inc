@@ -135,7 +135,7 @@ namespace phase2bTests
         setParam (p, pid::inputGain, -3.0f);
         setParam (p, pid::mix, 0.8f);
         juce::Array<int> order;
-        for (int id : { 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 }) order.add (id);
+        for (int id : { 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11 }) order.add (id);
         p.setFxOrder (order);
         p.setModSlotTarget (0, fx::chorusRate);
         p.setModSlotTarget (4, fx::delayMix);
@@ -320,6 +320,10 @@ namespace phase2bTests
                 {
                     a->randomizeAll (ra);
                     synthref::randomizeAllFx (*b, wild, rb);
+                    // The reference is the synth's flow and knows no FILTER roll guards (a strip-only rule);
+                    // apply them to its result, so the comparison covers every parameter, the filter's
+                    // included, and still proves the draws and the order shuffle are the synth's.
+                    params::applyFilterGuards (b->getAPVTS());
                     if (! identicalValues (allValues (*a), allValues (*b)) || a->getFxOrder() != b->getFxOrder())
                         ++mismatches;
                 }
@@ -504,7 +508,7 @@ namespace phase2bTests
             juce::Random rng (seed);
             proc->randomizeAll (rng);
         }
-        expect (identicalValues (allValues (*proc), before), "all 11 locked: every parameter (limiter, freeze, convStart included) bit-identical after 100 rolls");
+        expect (identicalValues (allValues (*proc), before), "all 12 locked: every parameter (limiter, freeze, convStart included) bit-identical after 100 rolls");
         expect (proc->getFxOrder() == orderBefore && proc->capturePatchSnapshot() == snap, "...and the chain order and whole patch are unchanged");
         expect (! proc->canUndo(), "...and a roll that changes nothing records no undo step");
     }
@@ -542,7 +546,7 @@ namespace phase2bTests
         {   // the limiter keeps a non-default slot too
             auto proc = makeProc (48000.0, 256);
             juce::Array<int> order;
-            for (int id : { 3, 1, 7, 5, 9, 0, 2, 10, 4, 6, 8 }) order.add (id);
+            for (int id : { 3, 1, 7, 5, 9, 0, 2, 10, 4, 6, 8, 11 }) order.add (id);
             proc->setFxOrder (order);
             bool ok = true;
             for (int seed = 1; seed <= 100; ++seed)
@@ -644,7 +648,7 @@ namespace phase2bTests
     {
         std::cout << "orderRulesTest\n";
         // Direct, on the pure shuffle: every lock mask class.
-        const juce::Array<int> start = [] { juce::Array<int> a; for (int id : { 5, 0, 8, 2, 10, 4, 7, 1, 9, 3, 6 }) a.add (id); return a; }();
+        const juce::Array<int> start = [] { juce::Array<int> a; for (int id : { 5, 0, 8, 2, 10, 4, 7, 1, 9, 11, 3, 6 }) a.add (id); return a; }();
         bool perm = true, fixedOk = true;
         std::set<juce::String> shuffledOrders;
         for (int seed = 1; seed <= 300; ++seed)
@@ -696,7 +700,7 @@ namespace phase2bTests
         {
             juce::Random r (seed);
             proc->randomizeAll (r);
-            ok = ok && isPermutation (proc->getFxOrder()) && slotOf (*proc, Module::limiter) == 10;
+            ok = ok && isPermutation (proc->getFxOrder()) && slotOf (*proc, Module::limiter) == kNumModules - 1;
             seen.insert (orderKey (proc->getFxOrder()));
         }
         expect (ok && seen.size() > 150, "the processor's order is a permutation with the limiter last and shuffles across seeds (" + juce::String ((int) seen.size()) + " distinct orders in 200 rolls)");
@@ -1359,7 +1363,7 @@ namespace phase2bTests
             if (def.id != pid::oversampling)
                 defaults = defaults && std::abs (proc->getAPVTS().getParameter (def.id)->getValue() - proc->getAPVTS().getParameter (def.id)->getDefaultValue()) < 1.0e-6f;
         expect (defaults, "every parameter (but oversampling) is at its registry default");
-        expect (proc->getFxOrder() == juce::Array<int> ([] { juce::Array<int> a; spa::dsp::FXChain::Module m[11]; spa::dsp::FXChain::unpackOrder (spa::dsp::FXChain::defaultOrderPacked(), m); for (auto x : m) a.add ((int) x); return a; }()) && proc->getFxOrder() == pristineOrder, "chain order is the default order");
+        expect (proc->getFxOrder() == juce::Array<int> ([] { juce::Array<int> a; spa::dsp::FXChain::Module m[spa::dsp::FXChain::numModules]; spa::dsp::FXChain::unpackOrder (spa::dsp::FXChain::defaultOrderPacked(), m); for (auto x : m) a.add ((int) x); return a; }()) && proc->getFxOrder() == pristineOrder, "chain order is the default order");
         bool noSlots = true;
         for (int s = 0; s < 8; ++s) noSlots = noSlots && proc->getModSlotTarget (s).isEmpty();
         expect (noSlots && proc->getConvolutionIRSource() == "none" && ! proc->hasConvolutionIR(), "no mod slots and no IR");
@@ -1544,7 +1548,8 @@ namespace phase2bTests
             expect (getParam (*proc, fx::compEnable) == 0.0f, "A: an FX parameter the file lacks takes its registry default (comp off)");
             expect (r.skippedIds.contains ("osc1.level") && r.skippedIds.contains ("filter1.cutoff") && r.skippedIds.contains ("global.mix") && r.skippedIds.contains ("mod.slot1.depth") && r.skippedIds.size() == 8,
                     "A: synth-only and non-FX ids are listed as skipped (" + r.skippedIds.joinIntoString (", ") + ")");
-            expect (r.order == PM::ImportResult::Order::applied && proc->getFxOrder().getFirst() == 10 && proc->getFxOrder().getLast() == 0, "A: chain order applied");
+            expect (r.order == PM::ImportResult::Order::migratedLegacy && proc->getFxOrder().getFirst() == (int) Module::filter && proc->getFxOrder()[1] == 10 && proc->getFxOrder().getLast() == 0,
+                    "A: the synth's eleven-module chain order is applied (reported as an older order) with FILTER inserted first, the rest as in the file");
             expect (r.ir == PM::ImportResult::IR::unresolved && r.irPath.startsWith ("$LIB$") && proc->getConvolutionIRSource() == "factory:forest-10m", "A: a $LIB$ IR path cannot be resolved -> reported, IR left unchanged");
             expect (std::abs (getParam (*proc, pid::inputGain) + 5.0f) < 1.0e-5f && std::abs (getParam (*proc, pid::mix) - 0.6f) < 1.0e-6f && getParam (*proc, pid::oversampling) == 1.0f
                         && std::abs (getParam (*proc, pid::sc::gain) - 9.0f) < 1.0e-5f && std::abs (getParam (*proc, pid::modSlotDepth (2)) + 0.4f) < 1.0e-6f && proc->getModSlotTarget (1) == fx::chorusRate,
@@ -1594,7 +1599,7 @@ namespace phase2bTests
             expect (rb.ok && rb.order == PM::ImportResult::Order::invalid && isPermutation (proc->getFxOrder()), "C: a corrupt order falls back to a valid one and is reported");
             SynthFile none;
             const auto rn = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "c3.spasynth", none));
-            expect (rn.order == PM::ImportResult::Order::notInFile && proc->getFxOrder() == juce::Array<int> ({ 0, 1, 5, 6, 10, 2, 3, 8, 4, 9, 7 }), "C: no fxOrder -> the default chain order");
+            expect (rn.order == PM::ImportResult::Order::notInFile && proc->getFxOrder() == juce::Array<int> ({ 11, 0, 1, 5, 6, 10, 2, 3, 8, 4, 9, 7 }), "C: no fxOrder -> the default chain order");
         }
 
         // ---------- D. IR resolution ----------
