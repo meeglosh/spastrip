@@ -245,6 +245,15 @@ public:
     // publishes the reported latency and reshapes the convolution IR.
     void serviceMessageThread();
 
+    // SPAStripAdded diagnostics: how many times the effect chain has been run
+    // (one per modulation sub-chunk, or one per host chunk on the plain path)
+    // and how many host chunks took the modulated (subdividing) path. Relaxed
+    // counters, read by the tests / bench; never used by the DSP.
+    int getConvolutionHeadSamples() const { return fxChain.convolutionHeadSamples(); }
+    int getConvolutionChunkSamples() const { return fxChain.convolutionChunkSamples(); }
+    uint64_t getChainInvocationCount() const { return chainInvocations.load (std::memory_order_relaxed); }
+    uint64_t getModulatedChunkCount() const { return modulatedChunks.load (std::memory_order_relaxed); }
+
     // Total latency (host-rate samples) that the processor reports / the dry
     // path is delayed by: oversampler latency + limiter lookahead.
     int getCurrentLatencySamples() const;
@@ -468,6 +477,8 @@ private:
     int numActiveSlots = 0;
     std::array<std::atomic<int>, numModSlots> slotTarget;   // index into mod::targets(), -1 = none
     std::atomic<int> modUpdateInterval { kDefaultModUpdateInterval };
+    std::atomic<uint64_t> chainInvocations { 0 };
+    std::atomic<uint64_t> modulatedChunks { 0 };
     std::atomic<float> modSmoothingMs { kDefaultModSmoothingMs };
     std::array<float, numModSlots> slotSmoothed {};   // smoothed offset per slot
     bool modOffsetsApplied = false;        // some FxFloat::normOffset may be non-zero

@@ -273,6 +273,9 @@ public:
     // Downsampled magnitude envelope of the shaped IR for the UI waveform.
     static constexpr int convEnvPoints = 256;
     const std::array<float, convEnvPoints>& convolutionEnvelope() const { return irEnvelope; }
+    // SPAStripAdded: partition sizes the convolution was prepared with (diagnostics / tests).
+    int convolutionHeadSamples() const { return convHeadSize; }
+    int convolutionChunkSamples() const { return convChunk; }
     double convolutionLengthSeconds() const { return irLengthSeconds.load (std::memory_order_relaxed); }
 
 private:
@@ -312,7 +315,17 @@ private:
     // a >=256-sample head for reverberation-length IRs (>=~4096 samples) to
     // keep average CPU down on the long tail, at the cost of a little extra
     // latency at the head vs the zero-latency uniform default.
-    juce::dsp::Convolution convolution { juce::dsp::Convolution::NonUniform { 256 } };
+    // SPAStripAdded: held by pointer so prepare() can re-create it with a
+    // partition size suited to the engine rate (see FXChain::prepare).
+    // One background queue (thread) shared by every instance this chain ever
+    // creates: destroying a Convolution that owns its queue joins that thread,
+    // which could stall the callback lock behind an in-flight IR build. Declared
+    // before `convolution` so it outlives it.
+    juce::dsp::ConvolutionMessageQueue convQueue;
+    std::unique_ptr<juce::dsp::Convolution> convolution
+        = std::make_unique<juce::dsp::Convolution> (juce::dsp::Convolution::NonUniform { 256 }, convQueue);
+    int convHeadSize = 256;   // SPAStripAdded: head/tail partition size the instance above was built with
+    int convChunk = 0;        // SPAStripAdded: max samples handed to one Convolution::process call
     juce::AudioBuffer<float> convScratch;
     // Written on the message thread (load/reshape), read on the audio thread
     // (process()) and from hasConvolutionIR() — same relaxed-atomic pattern as

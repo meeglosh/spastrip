@@ -19,7 +19,45 @@ void FXChain::prepare (double newSampleRate, int maxBlockSize)
     modEffect.prepare (sampleRate, maxBlockSize);
     tremVibEffect.prepare (sampleRate, maxBlockSize);
     limiterEffect.prepare (sampleRate, maxBlockSize);
-    convolution.prepare (spec);
+    // SPAStripAdded: size the convolution partition and bound its per-call block.
+    //
+    // JUCE's NonUniform head size doubles as the block size of the uniform-
+    // partition TAIL, whose work per second goes as (IR length x rate) / that
+    // size. At the fixed 256 this was (measured on an M5, 5 s IR, one block per
+    // budget period): 1x 35-40 % of the block budget, 2x 41-63 %, 4x 77-90 %
+    // with misses -- the cost grows with the square of the oversampling factor
+    // because both the IR and the block rate scale with it. The partition costs
+    // nothing in latency (the head engine is zero-latency), so make it large:
+    // 4096 gives 1x ~3 %, 2x ~8 %, 4x ~28 % at 512-1024 sample host buffers.
+    //
+    // The one trade-off: a bigger partition means fewer but taller tail
+    // "fills" (the whole IR is multiplied in one call, ~2 ms warm / ~7 ms cold
+    // for 5 s at 4x). At 4x with 128-256 sample host buffers one fill exceeds a
+    // block budget, and a fill only every 8th-16th block (4096) misses ~12 % of
+    // blocks where the old 256 spread the work flat at ~87 % load and missed
+    // ~3-4 %. There the partition is matched to the engine block (one fill per
+    // block keeps the IR hot in the system cache): 3 % / 1 % misses. Spreading a
+    // fill over several blocks would need a time-distributed engine, which JUCE's
+    // does not offer.
+    //
+    // Separately, cap what one Convolution::process call may be handed
+    // (convChunk): the head engine does two FFTs of 2x its PREPARED block size
+    // on EVERY call however few samples it is given, so preparing it for a
+    // 4x-oversampled 1024-sample host block (4096) made each 32-sample
+    // modulation piece cost ~100 us. The output is the same stream either way
+    // (see processConvolve).
+    {
+        int head = 4096;
+        if (sampleRate >= 128000.0 && maxBlockSize >= 512 && maxBlockSize < 2048)
+            head = juce::nextPowerOfTwo (maxBlockSize);
+        if (head != convHeadSize)
+        {
+            convolution = std::make_unique<juce::dsp::Convolution> (juce::dsp::Convolution::NonUniform { head }, convQueue);
+            convHeadSize = head;
+        }
+        convChunk = juce::jmax (64, juce::jmin (maxBlockSize, 256));
+    }
+    convolution->prepare ({ sampleRate, (juce::uint32) convChunk, 2 });
     convScratch.setSize (2, maxBlockSize, false, false, true);
     for (auto& b : convPreBuf) { b.setSize (1, (int) (0.2 * sampleRate) + 8); b.clear(); }
     convPreWrite = 0;
@@ -52,7 +90,7 @@ void FXChain::reset()
     modEffect.reset();
     tremVibEffect.reset();
     limiterEffect.reset();
-    convolution.reset();
+    convolution->reset();
     delayBuffer.clear();
     reverb.reset();
     eq.reset();
@@ -402,8 +440,13 @@ void FXChain::processConvolve (juce::AudioBuffer<float>& buffer, const Params& p
     // Wet copy through the convolution, then blend with the dry (mix + width).
     for (int ch = 0; ch < 2; ++ch)
         convScratch.copyFrom (ch, 0, buffer, juce::jmin (ch, numCh - 1), 0, n);
-    auto block = juce::dsp::AudioBlock<float> (convScratch).getSubBlock (0, (size_t) n);
-    convolution.process (juce::dsp::ProcessContextReplacing<float> (block));
+    // SPAStripAdded: in pieces of at most convChunk samples (the size it was
+    // prepared for); the result is the same stream, just bounded per-call cost.
+    for (int off = 0; off < n; off += convChunk)
+    {
+        auto block = juce::dsp::AudioBlock<float> (convScratch).getSubBlock ((size_t) off, (size_t) juce::jmin (convChunk, n - off));
+        convolution->process (juce::dsp::ProcessContextReplacing<float> (block));
+    }
 
     // Wet pre-delay (gap before the reverb).
     const int rs = convPreBuf[0].getNumSamples();
@@ -560,7 +603,7 @@ void FXChain::reshapeConvolutionIR()
         irEnvelope[(size_t) b] = juce::jmax (irEnvelope[(size_t) b], a);
     }
 
-    convolution.loadImpulseResponse (std::move (shaped), sr,
+    convolution->loadImpulseResponse (std::move (shaped), sr,
                                      juce::dsp::Convolution::Stereo::yes,
                                      juce::dsp::Convolution::Trim::no,
                                      juce::dsp::Convolution::Normalise::yes);

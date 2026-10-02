@@ -1228,6 +1228,7 @@ namespace
 #include "Phase2Tests.inc"
 #include "Phase2bTests.inc"
 #include "Phase3Tests.inc"
+#include "BenchCpu.inc"
 }
 
 int main (int argc, char** argv)
@@ -1236,6 +1237,16 @@ int main (int argc, char** argv)
 
     // Diagnostics: `SPAStripTests --audit-mod [id-substring] [sampleRate] [envelopeHz] [square] [slewMs] [interval]` prints the
     // modulation-target zipper audit instead of running the suite.
+    if (argc >= 2 && juce::String (argv[1]) == "--bench-cpu")
+    {
+        benchCpu::bench (argc, argv);
+        return 0;
+    }
+    if (argc >= 2 && juce::String (argv[1]) == "--bench-gesture")
+    {
+        benchGesture::bench (argc, argv);
+        return 0;
+    }
     if (argc >= 2 && juce::String (argv[1]) == "--bench-mod")
     {
         phase2Tests::benchModulation();
@@ -1371,6 +1382,7 @@ int main (int argc, char** argv)
     RUN (phase3Tests::drawerAndDialogsTest);
     RUN (phase3Tests::metersAndSidechainUiTest);
     RUN (phase3Tests::accentSettingsTest);
+    RUN (benchCpu::cpuCostRegressionTest);
 #undef RUN
     testPresetsRoot.deleteRecursively();
 

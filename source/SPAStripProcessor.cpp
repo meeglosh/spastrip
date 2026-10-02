@@ -563,10 +563,13 @@ void SPAStripProcessor::processChain (float* const* chans, int engineSamples, in
 {
     if (! modActive)
     {
+        chainInvocations.fetch_add (1, std::memory_order_relaxed);
         juce::AudioBuffer<float> buf (chans, 2, engineSamples);
         fxChain.process (buf, fxParams);
         return;
     }
+
+    modulatedChunks.fetch_add (1, std::memory_order_relaxed);
 
     const int step = juce::jlimit (1, 32, modUpdateInterval.load (std::memory_order_relaxed));
     for (int a = 0; a < hostSamples; a += step)
@@ -576,6 +579,7 @@ void SPAStripProcessor::processChain (float* const* chans, int engineSamples, in
         applyModOffsets (envBuf[(size_t) ((a + b - 1) / 2)], b - a);
         updateFXParams();
 
+        chainInvocations.fetch_add (1, std::memory_order_relaxed);
         float* pc[2] = { chans[0] + a * factor, chans[1] + a * factor };
         juce::AudioBuffer<float> piece (pc, 2, (b - a) * factor);
         fxChain.process (piece, fxParams);
@@ -764,15 +768,26 @@ void SPAStripProcessor::processChunk (juce::AudioBuffer<float>& hostBuffer, int 
         // disabled) and nothing left to glide, every offset is zero: the plain,
         // phase-1 path then runs, so the output is bit-identical to a plugin
         // without the matrix.
+        //
+        // SPAStripAdded: the test is on the largest offset a slot can reach in this
+        // chunk (|depth| x envelope peak), not on the envelope alone, so a slot with
+        // a tiny depth (a knob just leaving 0) or a nearly-silent sidechain (host
+        // noise floor) does not pay for the subdivided path to apply an offset of
+        // < kModEnvelopeEpsilon (1e-4 of the parameter's range: inaudible). The
+        // subdivided path costs one chain call per kDefaultModUpdateInterval host
+        // samples, which at 4x with a long convolution is the expensive one.
         bool modActive = false;
         if (numActiveSlots > 0)
         {
             float envMax = 0.0f;
             for (int i = 0; i < n; ++i)
                 envMax = juce::jmax (envMax, envBuf[(size_t) i]);
-            modActive = envMax > kModEnvelopeEpsilon;
             for (int i = 0; i < numActiveSlots && ! modActive; ++i)
-                modActive = std::abs (slotSmoothed[(size_t) activeSlots[(size_t) i].slot]) > 1.0e-4f;
+            {
+                const auto& a = activeSlots[(size_t) i];
+                modActive = std::abs (a.depth) * envMax > kModEnvelopeEpsilon
+                            || std::abs (slotSmoothed[(size_t) a.slot]) > kModEnvelopeEpsilon;
+            }
         }
         if (! modActive)
         {
