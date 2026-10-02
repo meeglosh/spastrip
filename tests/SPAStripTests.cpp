@@ -1299,6 +1299,7 @@ namespace
 #include "Phase2Tests.inc"
 #include "Phase2bTests.inc"
 #include "Phase3Tests.inc"
+#include "PresetTests.inc"
 #include "FilterTests.inc"
 #include "BenchCpu.inc"
 }
@@ -1349,14 +1350,14 @@ int main (int argc, char** argv)
     // The accent setting too (a hermetic file, never the user's own).
     spa::ui::settings::setSettingsFileOverride (testPresetsRoot.getSiblingFile (testPresetsRoot.getFileName() + "-settings.xml"));
 
-    // `SPAStripTests --ui-only` runs just the editor tests (quick; used with `leaks --atExit`).
+    // `SPAStripTests --ui-only` runs just the editor tests (phase 3 + the preset drawer / save panel; quick; used with `leaks --atExit`).
     const bool uiOnly = argc >= 2 && juce::String (argv[1]) == "--ui-only";
     // `SPAStripTests --filter-only` runs just the FILTER module tests.
     const bool filterOnly = argc >= 2 && juce::String (argv[1]) == "--filter-only";
 
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
-#define RUN(fn) do { if ((! uiOnly || juce::String (#fn).startsWith ("phase3Tests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
+#define RUN(fn) do { if ((! uiOnly || juce::String (#fn).startsWith ("phase3Tests::") || juce::String (#fn).startsWith ("presetTests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
@@ -1416,7 +1417,7 @@ int main (int argc, char** argv)
     RUN (phase2Tests::factoryIRLoadTest);
     RUN (phase2Tests::factoryIRStateTest);
 
-    // --- Phase 2b: review fixes, Randomize All / locks, undo, presets, SPASynth import ----
+    // --- Phase 2b: review fixes, Randomize All / locks, undo, presets ----
     RUN (phase2bTests::sidechainClampTest);
     RUN (phase2bTests::creditsMatchShippedIRsTest);
     RUN (phase2bTests::samplingParityTest);
@@ -1444,8 +1445,6 @@ int main (int argc, char** argv)
     RUN (phase2bTests::presetInitTest);
     RUN (phase2bTests::presetLoadUndoAndResetTest);
     RUN (phase2bTests::hostStatePresetNameTest);
-    RUN (phase2bTests::synthImportTest);
-    RUN (phase2bTests::synthImportRealFilesTest);
     RUN (phase2bTests::concurrentEditsAllocationTest);
 
     // --- Phase 3: the editor UI -----------------------------------------------
@@ -1461,6 +1460,17 @@ int main (int argc, char** argv)
     RUN (phase3Tests::drawerAndDialogsTest);
     RUN (phase3Tests::metersAndSidechainUiTest);
     RUN (phase3Tests::accentSettingsTest);
+
+    // --- Preset management: types, folders, drawer, save panel, export / import ----
+    RUN (presetTests::presetTypeRoundTripTest);
+    RUN (presetTests::presetFolderLayoutTest);
+    RUN (presetTests::presetBrowserModelTest);
+    RUN (presetTests::presetBrowserUiTest);
+    RUN (presetTests::presetSaveDialogTest);
+    RUN (presetTests::presetExportImportTest);
+    RUN (presetTests::presetDialogFlowsTest);
+    RUN (presetTests::presetLegacyOrderLoadTest);
+    RUN (presetTests::synthImportRemovedTest);
     // --- FILTER module ------------------------------------------------------------
     RUN (filterTests::filterResponseTest);
     RUN (filterTests::filterRoutingTest);

@@ -343,33 +343,93 @@ int main (int argc, char** argv)
         snap (*editor, outDir, "c2_filter_off", false);
     }
 
-    // ---- (d) preset drawer open ---------------------------------------------------
+    // ---- (d) preset drawer open: a dozen presets across the types, filed in folders ----
     {
         Rig rig (2);
         rig.process (100);
         auto& pm = rig.proc->getPresetManager();
         resetAll (*rig.proc);
-        for (const auto& s : { "Init Pad", "Wide Chorus Keys", "Tape Echo" })
+        const struct { const char* name; const char* folder; const char* type; const char* fx; } list[] = {
+            { "Kick Punch",     "",                  "Drums",     "DIST" },
+            { "Snare Crack",    "",                  "Drums",     "COMP" },
+            { "Warm Bass",      "",                  "Bass",      "FILTER" },
+            { "Lead Vox Air",   "",                  "Vocals",    "REVERB" },
+            { "Mystery Patch",  "",                  "",          "GRAIN" },
+            { "Room Drums",     "Studio",            "Drums",     "REVERB" },
+            { "Vocal Plate",    "Studio",            "Vocals",    "REVERB" },
+            { "Bus Glue",       "Studio",            "Mixbus",    "COMP" },
+            { "Final Polish",   "Studio/Mastering",  "Mastering", "LIMIT" },
+            { "Loud Master",    "Studio/Mastering",  "Mastering", "EQ" },
+            { "Granular Wash",  "Sound Design",      "Creative",  "GRAIN" },
+            { "Tape Echo",      "Sound Design",      "FX",        "DELAY" },
+            { "Amp Chorus",     "Sound Design",      "Guitar",    "CHORUS" } };
+        for (const auto& e : list)
         {
             resetAll (*rig.proc);
-            configureEffect (*rig.proc, juce::String (s).contains ("Chorus") ? "CHORUS" : juce::String (s).contains ("Echo") ? "DELAY" : "REVERB");
-            pm.save (s, {}, true);
+            configureEffect (*rig.proc, e.fx);
+            pm.save (e.name, e.folder, true, e.type);
         }
-        for (const auto& s : { "Dub Tunnel", "Spring Room", "Grain Cloud" })
-        {
-            resetAll (*rig.proc);
-            configureEffect (*rig.proc, juce::String (s).contains ("Grain") ? "GRAIN" : "CONV");
-            pm.save (s, "Ambient", true);
-        }
+        pm.createUserFolder ({}, "Live Rig");
         pm.rescan();
-        pm.loadPreset (1);
+        for (int i = 0; i < (int) pm.getPresets().size(); ++i)
+            if (pm.getPresets()[(size_t) i].name == "Vocal Plate")
+                pm.loadPreset (i);
         configureEffect (*rig.proc, "EQ");   // an edit after the load: the name gets its edited marker
+        spa::ui::settings::setPresetFavorite ("User/Warm Bass", true);
+        spa::ui::settings::setPresetFavorite ("Studio/Bus Glue", true);
+        spa::ui::settings::setPresetGroupMode (0);
         auto editor = std::make_unique<spa::SPAStripEditor> (*rig.proc);
         editor->setSize (baseW, baseH);
         editor->getContent().setPresetBrowserOpen (true, false);
         rig.process (200);
         pump (rig, 1200);
         snap (*editor, outDir, "d_preset_drawer");
+        editor->getContent().getPresetBrowser().getListForTest().scrollToEnsureRowIsOnscreen (0);
+        pump (rig, 400);
+        snap (*editor, outDir, "d1_preset_drawer_top", false);
+
+        // Grouped by TYPE.
+        editor->getContent().getPresetBrowser().setGroupBy (spa::ui::PresetBrowser::GroupBy::type);
+        pump (rig, 500);
+        snap (*editor, outDir, "d2_preset_drawer_by_type", false);
+
+        // Filtered: a type, then a type + search that leaves one, then favourites.
+        auto& browser = editor->getContent().getPresetBrowser();
+        browser.setGroupBy (spa::ui::PresetBrowser::GroupBy::folders);
+        browser.setTypeFilter ("Mastering");
+        pump (rig, 500);
+        snap (*editor, outDir, "d3_preset_drawer_type_filter", false);
+        browser.setTypeFilter ({});
+        browser.setSearchText ("zzzz");
+        pump (rig, 300);
+        snap (*editor, outDir, "d4_preset_drawer_no_match", false);
+        browser.setSearchText ({});
+        browser.setFavouritesOnly (true);
+        pump (rig, 300);
+        snap (*editor, outDir, "d5_preset_drawer_favourites", false);
+        browser.setFavouritesOnly (false);
+
+        // A narrow look: the folder menu pick + a collapsed group.
+        browser.toggleGroupRow (browser.findGroupRow ("U:Studio"));
+        pump (rig, 300);
+        snap (*editor, outDir, "d6_preset_drawer_collapsed", false);
+        browser.toggleGroupRow (browser.findGroupRow ("U:Studio"));
+    }
+
+    // ---- (d7) an empty library --------------------------------------------------------
+    {
+        Rig rig (2);
+        rig.process (60);
+        auto editor = std::make_unique<spa::SPAStripEditor> (*rig.proc);
+        editor->setSize (baseW, baseH);
+        auto& pm = rig.proc->getPresetManager();
+        // (the hermetic folder already holds the presets of scene d: use a fresh root)
+        const auto emptyRoot = tmp.getChildFile ("empty-presets");
+        pm.setPresetsRoot (emptyRoot);
+        editor->getContent().setPresetBrowserOpen (true, false);
+        pump (rig, 600);
+        snap (*editor, outDir, "d7_preset_drawer_empty", false);
+        pm.setPresetsRoot (tmp.getChildFile ("presets"));
     }
 
     // ---- (e) about / credits ------------------------------------------------------
@@ -422,7 +482,7 @@ int main (int argc, char** argv)
         spa::ui::resetAccentColor();
     }
 
-    // ---- extras: save dialog, import result, accent picker, conv drop highlight ----
+    // ---- extras: save dialog, accent picker -------------------------------------------
     {
         Rig rig (2);
         rig.process (100);
@@ -430,22 +490,60 @@ int main (int argc, char** argv)
         configureEffect (*rig.proc, "REVERB");
         auto editor = std::make_unique<spa::SPAStripEditor> (*rig.proc);
         editor->setSize (baseW, baseH);
-        editor->getContent().showSaveDialog (true);
+        auto& content = editor->getContent();
+        content.showSaveDialog (true);
         pump (rig, 400);
         snap (*editor, outDir, "x_save_dialog", false);
-        editor->getContent().dismissDialog();
-        editor->getContent().showAccentPicker();
+
+        auto* sd = dynamic_cast<spa::ui::SaveDialog*> (content.getDialogForTest());
+        if (sd != nullptr)
+        {
+            const auto select = [] (juce::ComboBox& cb, const juce::String& text)
+            {
+                for (int i = 0; i < cb.getNumItems(); ++i)
+                    if (cb.getItemText (i) == text)
+                        cb.setSelectedId (cb.getItemId (i), juce::sendNotificationSync);
+            };
+            select (sd->getTypeBox(), "Mixbus");
+            select (sd->getFolderBox(), "Auto (by type)");
+            pump (rig, 200);
+            snap (*editor, outDir, "x_save_dialog_mixbus_auto", false);
+
+            // The clash state: a taken name in the folder, with Replace offered.
+            select (sd->getTypeBox(), "Drums");
+            select (sd->getFolderBox(), "User (unfiled)");
+            sd->getNameEditor().setText ("Kick Punch", false);
+            sd->submit (false);
+            pump (rig, 200);
+            snap (*editor, outDir, "x_save_dialog_clash", false);
+
+            select (sd->getFolderBox(), "New folder...");
+            sd->getNameEditor().setText ("Kick Punch 2", false);
+            pump (rig, 200);
+            snap (*editor, outDir, "x_save_dialog_new_folder", false);
+        }
+        content.dismissDialog();
+
+        content.showConfirm ("Move folder to Trash", "Move the folder \"Sound Design\" and the 3 presets in it to the Trash? You can recover them from the Trash.",
+                             "Move to Trash", [] {});
+        pump (rig, 300);
+        snap (*editor, outDir, "x_confirm_trash_folder", false);
+        content.dismissDialog();
+
+        content.showClashDialog ("Kick Punch", [] (spa::preset::PresetManager::ImportClash, bool) {});
+        pump (rig, 300);
+        snap (*editor, outDir, "x_import_clash", false);
+        content.dismissDialog();
+
+        content.promptText ("Rename folder", "NAME", "Sound Design", "Rename", [] (const juce::String&) {});
+        pump (rig, 300);
+        snap (*editor, outDir, "x_rename_folder", false);
+        content.dismissDialog();
+
+        content.showAccentPicker();
         pump (rig, 300);
         snap (*editor, outDir, "x_accent_dialog", false);
-        editor->getContent().dismissDialog();
-        spa::preset::PresetManager::ImportResult r;
-        r.ok = true; r.presetName = "Glass Bells"; r.applied = 61; r.defaulted = 6;
-        r.skippedIds.add ("osc1.level"); r.skippedIds.add ("filter1.cutoff"); r.skippedIds.add ("global.master");
-        r.ir = spa::preset::PresetManager::ImportResult::IR::unresolved; r.irPath = "$LIB$/Pack/Hall.wav";
-        r.order = spa::preset::PresetManager::ImportResult::Order::applied;
-        editor->getContent().showMessage ("SPASynth preset imported", spa::ui::PresetBrowser::describeImport (r));
-        pump (rig, 300);
-        snap (*editor, outDir, "x_import_summary", false);
+        content.dismissDialog();
     }
 
     tmp.deleteRecursively();

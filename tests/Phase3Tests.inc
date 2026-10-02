@@ -724,35 +724,19 @@ namespace phase3Tests
         expect (content.isPresetBrowserOpen() && browser.isVisible() && (bool) proc->getAPVTS().state.getProperty ("uiPresetDrawerOpen"), "the drawer opens and the open state is stored");
         expect (browser.getNumRows() == 2 + 3, "the drawer lists 2 groups (User, Bank One) and 3 presets (" + juce::String (browser.getNumRows()) + " rows)");
         browser.setSearchText ("gam");
-        expect (browser.getNumRows() == 2 && browser.getRow (1).label == "Gamma", "the search box filters the list");
+        expect (browser.getNumRows() == 3 && browser.getRow (0).isGroup() && browser.getRow (1).isGroup() && browser.getRow (2).label.isEmpty() && browser.presetAtRow (2) != nullptr && browser.presetAtRow (2)->name == "Gamma",
+                "the search box filters the list (User > Bank One > Gamma; groups without a match are hidden)");
         browser.setSearchText ({});
 
         // Loading from the drawer: first preset row.
         int presetRow = -1;
         for (int i = 0; i < browser.getNumRows(); ++i)
-            if (! browser.getRow (i).isGroup && browser.getRow (i).label == "Beta") presetRow = i;
+            if (browser.presetAtRow (i) != nullptr && browser.presetAtRow (i)->name == "Beta") presetRow = i;
         expect (presetRow >= 0, "the Beta preset is listed");
         setParam (*proc, fx::distDrive, 0.9f);
         pm.loadPreset (browser.getRow (presetRow).presetIndex);
         content.refreshAll();
         expect (content.getPresetButtonText() == "Beta", "loading a row loads the preset and the header shows its name");
-
-        // Import summary text.
-        spa::preset::PresetManager::ImportResult r;
-        r.ok = true; r.presetName = "Glass"; r.applied = 61; r.defaulted = 6;
-        r.skippedIds.add ("osc1.level");
-        r.ir = spa::preset::PresetManager::ImportResult::IR::unresolved; r.irPath = "$LIB$/x.wav";
-        r.order = spa::preset::PresetManager::ImportResult::Order::migratedLegacy;
-        const auto text = ui::PresetBrowser::describeImport (r);
-        expect (text.contains ("61") && text.contains ("6 set") && text.contains ("osc1.level") && text.contains ("$LIB$/x.wav") && text.contains ("COMP and GRAIN"), "the import summary names applied / defaulted / skipped counts, the IR and the order result");
-        expect (ui::PresetBrowser::describeImport ([] { spa::preset::PresetManager::ImportResult f; f.error = "bad file"; return f; }()).contains ("bad file"), "a failed import reports the error");
-
-        // A real import through the browser.
-        const auto synthPreset = tmp.dir.getChildFile ("synth.spasynth");
-        synthPreset.replaceWithText ("<SPASynthPreset name=\"Imp\"><PARAM id=\"fxDist.drive\" value=\"0.9\"/><PARAM id=\"osc1.level\" value=\"0.5\"/></SPASynthPreset>");
-        browser.importFile (synthPreset);
-        expect (browser.getImportSummary().contains ("Imported") && browser.getImportSummary().contains ("skipped"), "importing a SPASynth preset fills the drawer's summary line (" + browser.getImportSummary() + ")");
-        content.dismissDialog();
 
         // Dialogs: one at a time, dismissed cleanly.
         content.showAboutPanel();
@@ -770,12 +754,16 @@ namespace phase3Tests
         content.dismissDialog();
         expect (content.getDialogForTest() == nullptr, "dismissing removes the dialog");
 
-        // Save dialog: clash -> warning, Replace works.
+        // Save dialog: opens on the loaded preset's folder with its (taken) name suffixed; a
+        // clash in the chosen folder -> warning, Replace works.
         content.showSaveDialog (true);
         auto* sd = dynamic_cast<ui::SaveDialog*> (content.getDialogForTest());
         expect (sd != nullptr, "Save As opens the save dialog");
         if (sd != nullptr)
         {
+            expect (sd->getNameEditor().getText() == "Beta 2" && sd->getFolderBox().getText() == "Bank One",
+                    "...pre-filled with the loaded preset's folder and a free variant of its name (" + sd->getNameEditor().getText() + " / " + sd->getFolderBox().getText() + ")");
+            sd->getFolderBox().setSelectedId (1, juce::sendNotificationSync);   // User (unfiled)
             sd->getNameEditor().setText ("Alpha", false);
             sd->submit (false);
             expect (sd->getWarningForTest().contains ("already exists") && content.getDialogForTest() == sd, "saving over an existing name warns and keeps the dialog open");

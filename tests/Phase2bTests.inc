@@ -1,5 +1,5 @@
 // Phase 2b tests: Randomize All / WILD / per-effect locks, undo / redo, presets
-// and the SPASynth import, plus the two review fixes (sidechain follower clamp,
+// plus the two review fixes (sidechain follower clamp,
 // shipped-IR credits). Included from SPAStripTests.cpp, where `expect`, `Proc`,
 // `pid`, `setParam`, `getParam`, `makeProc`, `Noise`, `writeTestIR` ... are in scope.
 
@@ -1150,19 +1150,23 @@ namespace phase2bTests
         expect (over.ok && over.overwritten && over.file == first.file && first.file.loadFileAsString() != text1, "replace=true overwrites and says so");
         expect (std::abs (getParam (*proc, fx::distDrive) - 0.9f) < 1.0e-6f, "(saving does not touch the sound)");
 
-        // --- banks: one level only.
+        // --- banks and folders: the User root first, then folders (SPASynth's layout: two levels
+        // can be created, deeper ones on disk are still listed); other files are ignored.
         pm.save ("Beta", "Drums");
         pm.save ("Gamma", "Drums");
         pm.save ("Delta", "Bass");
         const auto deepDir = t.dir.getChildFile ("User/Drums/Deep");
         deepDir.createDirectory();
-        first.file.copyFileTo (deepDir.getChildFile ("TooDeep.spastrip"));
+        first.file.copyFileTo (deepDir.getChildFile ("Nested.spastrip"));
         t.dir.getChildFile ("User/Drums/notes.txt").replaceWithText ("x");
         pm.rescan();
         juce::StringArray names;
         for (const auto& p : pm.getPresets()) names.add (p.bank + "/" + p.name);
-        expect (names.joinIntoString (",") == "/Alpha,Bass/Delta,Drums/Beta,Drums/Gamma", "list: User root first, then banks (one level), sorted; deeper folders and other files ignored (" + names.joinIntoString (",") + ")");
-        expect (pm.getBanks() == juce::StringArray ({ "Bass", "Drums" }), "getBanks lists the top-level bank folders only (" + pm.getBanks().joinIntoString (",") + ")");
+        expect (names.joinIntoString (",") == "/Alpha,Bass/Delta,Drums/Beta,Drums/Gamma,Drums/Nested", "list: User root first, then folders (a nested folder counts under its top-level bank), sorted; other files ignored (" + names.joinIntoString (",") + ")");
+        expect (pm.getBanks() == juce::StringArray ({ "Bass", "Drums" }), "getBanks lists the top-level folders only (" + pm.getBanks().joinIntoString (",") + ")");
+        expect (pm.getUserFolders() == juce::StringArray ({ "Bass", "Drums", "Drums/Deep" }), "getUserFolders lists every folder, nested ones as paths (" + pm.getUserFolders().joinIntoString (",") + ")");
+        deepDir.deleteRecursively();
+        pm.rescan();
 
         // --- load by index, next / previous.
         setParam (*proc, fx::distDrive, 0.1f);
@@ -1453,266 +1457,6 @@ namespace phase2bTests
         expect (! a->canUndo() && ! a->canRedo(), "a host session restore starts with an empty undo history");
         auto xml = juce::AudioProcessor::getXmlFromBinary (clean.getData(), (int) clean.getSize());
         expect (xml != nullptr && ! xml->toString().containsIgnoreCase ("undo"), "no undo data in the saved state");
-    }
-
-    //==========================================================================
-    // SPASynth import.
-    struct SynthFile
-    {
-        std::vector<std::pair<juce::String, juce::String>> params;   // id, value text
-        juce::String fxOrder;                                       // "" = absent
-        juce::String convIR;                                        // "" = absent
-        juce::String name = "Imported";
-    };
-
-    juce::File writeSynthPreset (const juce::File& dir, const juce::String& fileName, const SynthFile& f)
-    {
-        juce::XmlElement root ("SPASynthPreset");
-        root.setAttribute ("name", f.name);
-        root.setAttribute ("version", 1);
-        root.setAttribute ("type", "Organ");
-        auto* state = root.createNewChildElement ("PARAMS");
-        state->setAttribute ("randomWildness", "0.5");
-        state->setAttribute ("uiKeyboardOctave", "4");
-        state->setAttribute ("randomLockMask", "367");
-        if (f.fxOrder.isNotEmpty()) state->setAttribute ("fxOrder", f.fxOrder);
-        if (f.convIR.isNotEmpty()) state->setAttribute ("convIR", f.convIR);
-        for (const auto& p : f.params)
-        {
-            auto* e = state->createNewChildElement ("PARAM");
-            e->setAttribute ("id", p.first);
-            e->setAttribute ("value", p.second);
-        }
-        const auto file = dir.getChildFile (fileName);
-        root.writeTo (file);
-        return file;
-    }
-
-    juce::uint64 packOrder (std::initializer_list<int> ids)
-    {
-        juce::uint64 v = 0; int i = 0;
-        for (int id : ids) v |= (juce::uint64) (id & 0xF) << (4 * i++);
-        return v;
-    }
-
-    int numFxDefs() { return params::numFxParams(); }
-
-    void synthImportTest()
-    {
-        std::cout << "synthImportTest\n";
-        TempDir t ("synthimport");
-        const auto ir = writeTestIR ("synth-ir", 48000.0, 1.0);
-
-        // Synth-only parameters are copied from a real preset's naming (see the real-file test below).
-        const std::vector<std::pair<juce::String, juce::String>> synthOnly {
-            { "ampEnv.attack", "0.64" }, { "filter1.cutoff", "3000" }, { "osc1.level", "-6" }, { "masterGain", "-3" },
-            { "arp.enable", "1" }, { "matrix.route1.depth", "0.5" } };
-
-        // ---------- A. current format, session state preserved ----------
-        {
-            auto proc = makeIsolated (t);
-            auto& pm = proc->getPresetManager();
-            setParam (*proc, pid::inputGain, -5.0f); setParam (*proc, pid::mix, 0.6f); setParam (*proc, pid::oversampling, 1.0f);
-            setParam (*proc, pid::sc::gain, 9.0f); setParam (*proc, pid::modSlotDepth (2), -0.4f);
-            proc->setModSlotTarget (1, fx::chorusRate);
-            proc->setLocked (Module::delay, true); proc->setRandomWildness (0.33f);
-            proc->getAPVTS().state.setProperty ("uiScale", 1.25, nullptr);
-            proc->loadFactoryIR ("forest-10m");
-            setParam (*proc, fx::compEnable, 1.0f);     // not in the file: must fall back to default (off)
-            proc->clearUndoHistory();
-            const auto before = proc->capturePatchSnapshot();
-
-            SynthFile f;
-            f.params = synthOnly;
-            f.params.push_back ({ "global.mix", "0.1" });               // a strip id, but not an FX one
-            f.params.push_back ({ "mod.slot1.depth", "1.0" });
-            f.params.push_back ({ fx::distDrive, "0.55" });
-            f.params.push_back ({ fx::distEnable, "1.0" });
-            f.params.push_back ({ fx::chorusRate, "2.0" });
-            f.params.push_back ({ fx::reverbMode, "3.0" });
-            f.params.push_back ({ fx::grainSpread, "0.4" });
-            f.params.push_back ({ fx::grainSpreadPitch, "5.0" });
-            f.params.push_back ({ pid::eqBand (3, fx::eqband::gain), "-4.5" });
-            f.fxOrder = juce::String ((juce::int64) packOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 }));
-            f.convIR = "$LIB$Some Pack/impulse.wav";
-            f.name = "Synth Sound";
-            const auto file = writeSynthPreset (t.dir, "a.spasynth", f);
-
-            const auto r = pm.importSPASynthPreset (file);
-            expect (r.ok && r.presetName == "Synth Sound", "A: imports (" + r.error + ")");
-            expect (r.applied == 7 && r.defaulted == numFxDefs() - 7 && r.applied + r.defaulted == numFxDefs(), "A: 7 FX parameters applied, the other " + juce::String (numFxDefs() - 7) + " defaulted (applied " + juce::String (r.applied) + ", defaulted " + juce::String (r.defaulted) + ")");
-            expect (std::abs (getParam (*proc, fx::distDrive) - 0.55f) < 1.0e-5f && getParam (*proc, fx::distEnable) == 1.0f && std::abs (getParam (*proc, fx::chorusRate) - 2.0f) < 1.0e-4f
-                        && getParam (*proc, fx::reverbMode) == 3.0f && std::abs (getParam (*proc, fx::grainSpread) - 0.4f) < 1.0e-5f && std::abs (getParam (*proc, fx::grainSpreadPitch) - 5.0f) < 1.0e-4f
-                        && std::abs (getParam (*proc, pid::eqBand (3, fx::eqband::gain)) + 4.5f) < 1.0e-4f, "A: the FX values land (real values, same IDs)");
-            expect (! r.grainSpreadMigrated, "A: spreadPitch present -> no migration");
-            expect (getParam (*proc, fx::compEnable) == 0.0f, "A: an FX parameter the file lacks takes its registry default (comp off)");
-            expect (r.skippedIds.contains ("osc1.level") && r.skippedIds.contains ("filter1.cutoff") && r.skippedIds.contains ("global.mix") && r.skippedIds.contains ("mod.slot1.depth") && r.skippedIds.size() == 8,
-                    "A: synth-only and non-FX ids are listed as skipped (" + r.skippedIds.joinIntoString (", ") + ")");
-            expect (r.order == PM::ImportResult::Order::migratedLegacy && proc->getFxOrder().getFirst() == (int) Module::filter && proc->getFxOrder()[1] == 10 && proc->getFxOrder().getLast() == 0,
-                    "A: the synth's eleven-module chain order is applied (reported as an older order) with FILTER inserted first, the rest as in the file");
-            expect (r.ir == PM::ImportResult::IR::unresolved && r.irPath.startsWith ("$LIB$") && proc->getConvolutionIRSource() == "factory:forest-10m", "A: a $LIB$ IR path cannot be resolved -> reported, IR left unchanged");
-            expect (std::abs (getParam (*proc, pid::inputGain) + 5.0f) < 1.0e-5f && std::abs (getParam (*proc, pid::mix) - 0.6f) < 1.0e-6f && getParam (*proc, pid::oversampling) == 1.0f
-                        && std::abs (getParam (*proc, pid::sc::gain) - 9.0f) < 1.0e-5f && std::abs (getParam (*proc, pid::modSlotDepth (2)) + 0.4f) < 1.0e-6f && proc->getModSlotTarget (1) == fx::chorusRate,
-                    "A: global.*, sc.*, mod depths and slot targets are untouched");
-            expect (proc->isLocked (Module::delay) && std::abs (proc->getRandomWildness() - 0.33f) < 1.0e-6f && proc->getAPVTS().state.getProperty ("uiScale").toString() == "1.25", "A: locks, WILD and UI properties are untouched");
-            expect (proc->getUndoStepCount() == 1 && proc->getUndoLabel().containsIgnoreCase ("IMPORT"), "A: the import is ONE undo step ('" + proc->getUndoLabel() + "')");
-            expect (pm.getCurrentName() == "Synth Sound" && pm.isEdited() && pm.getCurrentFile() == juce::File(), "A: named after the synth preset, 'edited' (no SPAStrip file behind it)");
-            proc->undo();
-            expect (proc->capturePatchSnapshot() == before && pm.getCurrentName() == "Init", "A: undo restores the whole previous patch and preset identity");
-        }
-
-        // ---------- B. legacy grain spread (1.0.29) ----------
-        {
-            auto proc = makeIsolated (t);
-            SynthFile f; f.params = { { fx::grainSpread, "0.5" } };
-            auto r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "b.spasynth", f));
-            expect (r.ok && r.grainSpreadMigrated && std::abs (getParam (*proc, fx::grainSpreadPitch) - 6.0f) < 1.0e-4f && std::abs (getParam (*proc, fx::grainSpread) - 0.5f) < 1.0e-6f,
-                    "B: spread 0.5 without spreadPitch -> spreadPitch = 12 x 0.5 = 6 st (got " + juce::String (getParam (*proc, fx::grainSpreadPitch), 3) + ")");
-            expect (r.applied == 2, "B: the migrated value counts as applied (" + juce::String (r.applied) + ")");
-            SynthFile g; g.params = { { fx::grainSpread, "1.0" } };
-            proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "b2.spasynth", g));
-            expect (std::abs (getParam (*proc, fx::grainSpreadPitch) - 12.0f) < 1.0e-4f, "B: spread 1.0 -> 12 st (the full old +/-12 st)");
-            SynthFile h; h.params = { { fx::grainSpread, "0.8" }, { fx::grainSpreadPitch, "2.0" } };
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "b3.spasynth", h));
-            expect (! r.grainSpreadMigrated && std::abs (getParam (*proc, fx::grainSpreadPitch) - 2.0f) < 1.0e-4f, "B: a 1.0.30 file (both present) is not migrated");
-            SynthFile k;   // neither: defaults
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "b4.spasynth", k));
-            expect (! r.grainSpreadMigrated && getParam (*proc, fx::grainSpread) == 0.25f && getParam (*proc, fx::grainSpreadPitch) == 3.0f, "B: a file with neither (pre-GRAIN) -> both at their defaults, no migration");
-        }
-
-        // ---------- C. legacy nine-module order ----------
-        {
-            auto proc = makeIsolated (t);
-            // user order of the nine original modules: reverb, limiter, dist, delay, eq, chorus, conv, mod, tremVib
-            SynthFile f; f.params = { { fx::distDrive, "0.3" } };
-            f.fxOrder = juce::String ((juce::int64) packOrder ({ 3, 7, 0, 2, 4, 1, 8, 5, 6 }));
-            const auto r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "c.spasynth", f));
-            const auto o = proc->getFxOrder();
-            // GRAIN (10) immediately before DELAY (2); COMP (9) immediately before LIMITER (7).
-            expect (r.ok && r.order == PM::ImportResult::Order::migratedLegacy && isPermutation (o)
-                        && o.indexOf (10) + 1 == o.indexOf (2) && o.indexOf (9) + 1 == o.indexOf (7),
-                    "C: a nine-module order is kept and widened: GRAIN right before DELAY, COMP right before LIMITER (" + orderKey (o) + ")");
-            juce::Array<int> userOnly; for (int id : o) if (id < 9) userOnly.add (id);
-            expect (userOnly == juce::Array<int> ({ 3, 7, 0, 2, 4, 1, 8, 5, 6 }), "C: the user's relative order is preserved");
-            SynthFile bad; bad.fxOrder = "123456789012345678";
-            const auto rb = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "c2.spasynth", bad));
-            expect (rb.ok && rb.order == PM::ImportResult::Order::invalid && isPermutation (proc->getFxOrder()), "C: a corrupt order falls back to a valid one and is reported");
-            SynthFile none;
-            const auto rn = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "c3.spasynth", none));
-            expect (rn.order == PM::ImportResult::Order::notInFile && proc->getFxOrder() == juce::Array<int> ({ 11, 0, 1, 5, 6, 10, 2, 3, 8, 4, 9, 7 }), "C: no fxOrder -> the default chain order");
-        }
-
-        // ---------- D. IR resolution ----------
-        {
-            auto proc = makeIsolated (t);
-            SynthFile f; f.params = { { fx::convMix, "0.5" } };
-            f.convIR = ir.getFullPathName();
-            auto r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "d.spasynth", f));
-            expect (r.ok && r.ir == PM::ImportResult::IR::resolved && proc->getConvolutionIRSource() == "embedded" && proc->hasConvolutionIR() && proc->getConvolutionIRName().startsWith ("synth-ir"),
-                    "D: an absolute path to an existing audio file resolves and is embedded (" + proc->getConvolutionIRName() + ")");
-            expect (proc->getUndoStepCount() == 1, "D: preset + IR are still ONE undo step (" + juce::String (proc->getUndoStepCount()) + ")");
-            proc->undo();
-            expect (proc->getConvolutionIRSource() == "none" && ! proc->hasConvolutionIR(), "D: undo removes the imported IR again");
-            proc->loadFactoryIR ("chamber");
-            f.convIR = t.dir.getChildFile ("missing.wav").getFullPathName();
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "d2.spasynth", f));
-            expect (r.ir == PM::ImportResult::IR::unresolved && proc->getConvolutionIRSource() == "factory:chamber", "D: an absolute path that does not exist -> unresolved, IR unchanged");
-            f.convIR = "relative/impulse.wav";
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "d3.spasynth", f));
-            expect (r.ir == PM::ImportResult::IR::unresolved && proc->getConvolutionIRSource() == "factory:chamber", "D: a relative path -> unresolved");
-            const auto notAudio = t.dir.getChildFile ("not-audio.wav"); notAudio.replaceWithText ("hello");
-            f.convIR = notAudio.getFullPathName();
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "d4.spasynth", f));
-            expect (r.ir == PM::ImportResult::IR::unresolved && proc->getConvolutionIRSource() == "factory:chamber", "D: a path that exists but is not audio -> unresolved");
-            SynthFile noIr;
-            r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "d5.spasynth", noIr));
-            expect (r.ir == PM::ImportResult::IR::notInFile && proc->getConvolutionIRSource() == "factory:chamber", "D: no convIR in the file -> not in file, IR left alone");
-        }
-
-        // ---------- E. values ----------
-        {
-            auto proc = makeIsolated (t);
-            SynthFile f;
-            f.params = { { fx::distDrive, "5.0" }, { fx::reverbMode, "99" }, { fx::chorusRate, "abc" }, { fx::delayMix, "nan" }, { fx::eqEnable, "0.9" },
-                         { fx::distTone, "" }, { "", "1" }, { fx::reverbMix, "0.25" }, { fx::reverbMix, "0.35" } };
-            setParam (*proc, fx::chorusRate, 3.0f);
-            const auto r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "e.spasynth", f));
-            expect (r.ok && getParam (*proc, fx::distDrive) == 1.0f && getParam (*proc, fx::reverbMode) == 4.0f && getParam (*proc, fx::eqEnable) == 1.0f, "E: out-of-range values are clamped (drive 5 -> 1, mode 99 -> 4, bool 0.9 -> on)");
-            expect (std::abs (getParam (*proc, fx::chorusRate) - 0.8f) < 1.0e-5f && std::abs (getParam (*proc, fx::delayMix) - 0.35f) < 1.0e-5f && std::abs (getParam (*proc, fx::distTone) - 8000.0f) < 0.01f, "E: unreadable values (abc / nan / empty) are skipped and the parameter takes its default");
-            expect (r.skippedIds.contains (fx::chorusRate) && r.skippedIds.contains (fx::delayMix) && r.skippedIds.contains (fx::distTone), "E: ...and listed as skipped");
-            expect (std::abs (getParam (*proc, fx::reverbMix) - 0.35f) < 1.0e-5f, "E: a repeated id: the last value wins");
-        }
-
-        // ---------- F. refusals change nothing ----------
-        {
-            auto proc = makeIsolated (t);
-            dirtyPatch (*proc);
-            proc->clearUndoHistory();
-            const auto before = proc->capturePatchSnapshot();
-            const auto vals = allValues (*proc);
-            const auto garbage = t.dir.getChildFile ("g.spasynth"); garbage.replaceWithText ("nope");
-            const auto wrongRoot = t.dir.getChildFile ("w.spasynth"); wrongRoot.replaceWithText ("<SPAStripPreset name=\"x\"><PARAMS/></SPAStripPreset>");
-            const auto noChild = t.dir.getChildFile ("n.spasynth"); noChild.replaceWithText ("<SPASynthPreset name=\"x\"/>");
-            bool refused = true;
-            for (const auto& f : { garbage, wrongRoot, noChild, t.dir.getChildFile ("absent.spasynth") })
-            {
-                const auto r = proc->getPresetManager().importSPASynthPreset (f);
-                refused = refused && ! r.ok && r.error.isNotEmpty() && r.applied == 0;
-            }
-            expect (refused && proc->capturePatchSnapshot() == before && identicalValues (allValues (*proc), vals) && ! proc->canUndo(), "F: garbage / wrong root / missing files are refused with a message and change nothing");
-            // A synth preset with no FX at all: defaults for every FX parameter.
-            SynthFile empty;
-            const auto r = proc->getPresetManager().importSPASynthPreset (writeSynthPreset (t.dir, "empty.spasynth", empty));
-            expect (r.ok && r.applied == 0 && r.defaulted == numFxDefs() && std::abs (getParam (*proc, fx::distDrive) - 0.3f) < 1.0e-6f && std::abs (getParam (*proc, pid::inputGain) + 3.0f) < 1.0e-5f, "F: a file with no FX parameters -> every FX parameter at its default, globals kept");
-        }
-        ir.deleteFile();
-    }
-
-    // The real on-disk format: every preset the SPASynth user folder holds (read only).
-    void synthImportRealFilesTest()
-    {
-        std::cout << "synthImportRealFilesTest\n";
-        const auto root = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                              .getChildFile ("Silverplatter Audio").getChildFile ("SPASynth").getChildFile ("Presets");
-        auto files = root.findChildFiles (juce::File::findFiles, true, "*.spasynth");
-        if (files.isEmpty())
-        {
-            std::cout << "  (skipped: no SPASynth presets under " << root.getFullPathName() << ")\n";
-            return;
-        }
-        std::sort (files.begin(), files.end());
-        TempDir t ("realimport");
-        auto proc = makeIsolated (t);
-        setParam (*proc, pid::inputGain, -2.0f);
-        setParam (*proc, pid::oversampling, 1.0f);
-
-        int ok = 0, bad = 0, withFx = 0, legacyOrder = 0, migrated = 0, irResolved = 0, irUnresolved = 0, irNone = 0;
-        juce::StringArray problems;
-        int tried = 0;
-        for (int i = 0; i < files.size(); ++i, ++tried)
-        {
-            const auto r = proc->getPresetManager().importSPASynthPreset (files[i]);
-            if (! r.ok) { ++bad; problems.add (files[i].getFileName() + ": " + r.error); continue; }
-            ++ok;
-            if (r.applied > 0) ++withFx;
-            if (r.order == PM::ImportResult::Order::migratedLegacy) ++legacyOrder;
-            if (r.grainSpreadMigrated) ++migrated;
-            if (r.ir == PM::ImportResult::IR::resolved) ++irResolved; else if (r.ir == PM::ImportResult::IR::unresolved) ++irUnresolved; else ++irNone;
-            if (r.skippedIds.size() < 100) problems.add (files[i].getFileName() + ": only " + juce::String (r.skippedIds.size()) + " skipped ids");
-            // Invariants after every import.
-            bool valid = isPermutation (proc->getFxOrder()) && r.applied + r.defaulted == numFxDefs()
-                         && std::abs (getParam (*proc, pid::inputGain) + 2.0f) < 1.0e-5f && getParam (*proc, pid::oversampling) == 1.0f;
-            for (const auto& def : params::all())
-            {
-                const float v = getParam (*proc, def.id);
-                valid = valid && std::isfinite (v);
-            }
-            if (! valid) problems.add (files[i].getFileName() + ": invariants broken");
-        }
-        std::cout << "  ..   imported " << ok << " of " << tried << " real .spasynth files found under " << root.getFullPathName() << ": " << withFx << " carry FX values, " << legacyOrder << " legacy 9-module orders, "
-                  << migrated << " grain-spread migrations, convIR: " << irResolved << " resolved / " << irUnresolved << " unresolved / " << irNone << " absent\n";
-        expect (bad == 0 && tried > 0, "every real SPASynth preset found imports (" + juce::String (ok) + "/" + juce::String (tried) + (bad ? "; failed: " + problems.joinIntoString ("; ") : juce::String()) + ")");
-        expect (problems.isEmpty(), "...and the post-import invariants hold (valid order, finite values, globals / oversampling kept)" + (problems.isEmpty() ? juce::String() : ": " + problems.joinIntoString ("; ")));
     }
 
     //==========================================================================

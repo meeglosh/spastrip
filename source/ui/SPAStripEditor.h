@@ -60,6 +60,13 @@ public:
     void showMessage (const juce::String& title, const juce::String& body);
     void showSaveDialog (bool saveAs);
     void showRenameDialog (const juce::File&);
+    // Generic prompts the preset drawer uses (the answer is delivered a turn after the dialog closes).
+    void promptText (const juce::String& title, const juce::String& prompt, const juce::String& initial,
+                     const juce::String& okLabel, std::function<void (const juce::String&)> onOk);
+    void showConfirm (const juce::String& title, const juce::String& body, const juce::String& okLabel,
+                      std::function<void()> onOk);
+    void showClashDialog (const juce::String& presetName,
+                          std::function<void (preset::PresetManager::ImportClash, bool)> decide);
     void dismissDialog();
     juce::Component* getDialogForTest() const { return dialog.get(); }
 
@@ -118,6 +125,7 @@ private:
     void tabChanged();
     bool isTabLocked (const juce::String& name) const;
     void layoutDrawer();
+    void saveCurrentInPlace();
 
     SPAStripProcessor& processor;
     ModVizDriver modViz;
@@ -145,6 +153,7 @@ private:
 
     std::unique_ptr<PresetBrowser> presetBrowser;
     bool presetBrowserOpen = false;
+    bool saveFolderAutoSticky = false;   // "Auto (by type)" stays selected for the next Save As
     std::unique_ptr<DialogOverlay> dialog;
     std::unique_ptr<juce::ComponentAnimator> animator;
 

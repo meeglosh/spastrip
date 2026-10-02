@@ -95,7 +95,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     setWantsKeyboardFocus (true);   // owns Cmd/Ctrl+Z when the editor has focus
 
     //--- Header ---------------------------------------------------------------
-    logoButton.setTooltip ("SPAStrip menu: about, import, accent colour");
+    logoButton.setTooltip ("SPAStrip menu: about, accent colour");
     logoButton.onClick = [this] { showLogoMenu(); };
     addAndMakeVisible (logoButton);
 
@@ -232,13 +232,15 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     //--- Preset drawer (topmost but dialogs) -------------------------------------
     PresetBrowser::Hooks hooks;
     hooks.onClose = [this] { setPresetBrowserOpen (false, true); };
-    hooks.onImported = [this] (const preset::PresetManager::ImportResult& r)
-    {
-        showMessage (r.ok ? "SPASynth preset imported" : "Import failed", PresetBrowser::describeImport (r));
-        refreshAll();
-    };
     hooks.promptRename = [this] (const juce::File& f) { showRenameDialog (f); };
-    hooks.showMessage = [this] (const juce::String& m) { showMessage ("Presets", m); };
+    hooks.promptText = [this] (const juce::String& t, const juce::String& pr, const juce::String& init,
+                               const juce::String& ok, std::function<void (const juce::String&)> cb)
+    { promptText (t, pr, init, ok, std::move (cb)); };
+    hooks.confirm = [this] (const juce::String& t, const juce::String& b, const juce::String& ok, std::function<void()> cb)
+    { showConfirm (t, b, ok, std::move (cb)); };
+    hooks.askClash = [this] (const juce::String& name, std::function<void (preset::PresetManager::ImportClash, bool)> cb)
+    { showClashDialog (name, std::move (cb)); };
+    hooks.showMessage = [this] (const juce::String& t, const juce::String& m) { showMessage (t, m); };
     presetBrowser = std::make_unique<PresetBrowser> (processor, std::move (hooks));
     addChildComponent (*presetBrowser);
 
@@ -497,8 +499,6 @@ void ContentComponent::showLogoMenu()
     juce::PopupMenu m;
     m.addItem (1, "About SPAStrip...");
     m.addItem (2, "Accent colour...");
-    m.addSeparator();
-    m.addItem (3, "Import SPASynth preset...");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&logoButton),
                      [safe = juce::Component::SafePointer<ContentComponent> (this)] (int r)
                      {
@@ -506,14 +506,12 @@ void ContentComponent::showLogoMenu()
                              return;
                          if (r == 1) safe->showAboutPanel();
                          else if (r == 2) safe->showAccentPicker();
-                         else if (r == 3)
-                         {
-                             safe->setPresetBrowserOpen (true, true);
-                             safe->presetBrowser->startImport();
-                         }
                      });
 }
 
+// SAVE: a loaded user preset whose file still exists offers "Save" (rewrite it in
+// place, keeping its name, folder and type) next to "Save As..."; anything else (Init,
+// a factory preset, a deleted file) goes straight to Save As -- as in SPASynth.
 void ContentComponent::onSaveClicked()
 {
     auto& pm = processor.getPresetManager();
@@ -532,52 +530,131 @@ void ContentComponent::onSaveClicked()
                          if (safe == nullptr || r <= 0)
                              return;
                          if (r == 2)
-                         {
                              safe->showSaveDialog (true);
-                             return;
-                         }
-                         auto& manager = safe->processor.getPresetManager();
-                         const auto parent = manager.getCurrentFile().getParentDirectory();
-                         const auto bank = parent == manager.getUserFolder() ? juce::String() : parent.getFileName();
-                         const auto res = manager.save (manager.getCurrentName(), bank, true);
-                         if (! res.ok)
-                             safe->showMessage ("Save failed", res.error);
-                         safe->refreshAll();
+                         else
+                             safe->saveCurrentInPlace();
                      });
 }
 
+void ContentComponent::saveCurrentInPlace()
+{
+    auto& pm = processor.getPresetManager();
+    const auto res = pm.saveInPlace (pm.getCurrentFile());
+    if (! res.ok)
+        showMessage ("Save failed", res.error);
+    refreshAll();
+}
+
+// SAVE AS / first save of an unsaved patch. Default folder = the loaded user preset's
+// folder (else the User root), never Auto unless Auto was used for the previous save.
+// Default NAME: "<Type> <n>" until the user types one; a patch that came from a preset
+// starts from that preset's name ("Warm Pad", or "Warm Pad 2" if taken) and that name
+// is the user's, so changing TYPE leaves it alone.
 void ContentComponent::showSaveDialog (bool)
 {
     auto& pm = processor.getPresetManager();
-    const auto file = pm.getCurrentFile();
-    juce::String bank;
-    if (file.existsAsFile())
+    SaveDialog::Init init;
+    init.userFolders = pm.getUserFolders();
+    init.startAuto = saveFolderAutoSticky;
+
+    juce::String presetName;
     {
-        const auto parent = file.getParentDirectory();
-        bank = parent == pm.getUserFolder() ? juce::String() : parent.getFileName();
+        const auto idx = pm.getCurrentIndex();
+        const auto& list = pm.getPresets();
+        if (idx >= 0 && idx < (int) list.size())
+        {
+            const auto& p = list[(size_t) idx];
+            if (! p.isFactory)
+                init.defaultFolder = p.folder;
+            presetName = p.name;
+            init.initialType = p.type;
+        }
+        else if (pm.getCurrentName() != "Init")
+            presetName = pm.getCurrentName();
     }
-    auto d = std::make_unique<SaveDialog> (pm.getBanks(), pm.getCurrentName() == "Init" ? juce::String() : pm.getCurrentName(), bank,
-        [this] (const juce::String& name, const juce::String& b, bool replace)
-        { return processor.getPresetManager().save (name, b, replace); },
-        [this] { refreshAll(); });
+
+    // The folder a name is checked against: Auto only applies once a type exists.
+    const auto initialFolder = init.startAuto ? init.initialType : init.defaultFolder;
+    if (presetName.isNotEmpty())
+    {
+        init.nameIsOwned = true;
+        init.initialName = pm.suggestName (presetName, initialFolder, false);
+    }
+    else
+        init.initialName = pm.suggestName (init.initialType.isEmpty() ? juce::String ("Preset") : init.initialType,
+                                           initialFolder, true);
+
+    juce::Component::SafePointer<ContentComponent> safe (this);
+    auto d = std::make_unique<SaveDialog> (
+        init,
+        [safe] (const SaveRequest& req)
+        {
+            preset::PresetManager::SaveResult res;
+            if (safe == nullptr)
+                return res;
+            res = safe->processor.getPresetManager().save (req.name, req.folder, req.replace, req.type, req.createFolder);
+            if (res.ok)
+                safe->saveFolderAutoSticky = req.autoFolder;
+            return res;
+        },
+        [safe] (const juce::String& type, const juce::String& folder)
+        {
+            return safe == nullptr ? type
+                                   : safe->processor.getPresetManager().suggestName (type.isEmpty() ? juce::String ("Preset") : type,
+                                                                                    folder, true);
+        },
+        [safe] (const juce::String& name, const juce::String& folder)
+        { return safe != nullptr && safe->processor.getPresetManager().userPresetExists (name, folder); },
+        [safe] { if (safe != nullptr) safe->refreshAll(); });
     auto* raw = d.get();
     showDialog (std::move (d));
     raw->getNameEditor().grabKeyboardFocus();
+    raw->getNameEditor().selectAll();
+}
+
+void ContentComponent::promptText (const juce::String& title, const juce::String& prompt, const juce::String& initial,
+                                   const juce::String& okLabel, std::function<void (const juce::String&)> onOk)
+{
+    juce::Component::SafePointer<ContentComponent> safe (this);
+    showDialog (std::make_unique<TextPromptDialog> (title, prompt, initial, okLabel,
+        [safe, answer = std::move (onOk)] (const juce::String& text)
+        {
+            if (safe == nullptr)
+                return;
+            // A turn later: the answer may open another dialog, which would destroy this
+            // one while its own button handler is still running.
+            if (safe->dialog != nullptr && safe->dialog->onDismiss)
+                safe->dialog->onDismiss();
+            juce::MessageManager::callAsync ([answer, text] { answer (text); });
+        }));
+    if (auto* d = dynamic_cast<TextPromptDialog*> (dialog.get()))
+        d->getEditor().grabKeyboardFocus();
+}
+
+void ContentComponent::showConfirm (const juce::String& title, const juce::String& body, const juce::String& okLabel,
+                                    std::function<void()> onOk)
+{
+    showDialog (std::make_unique<ConfirmDialog> (title, body, okLabel, std::move (onOk)));
+}
+
+void ContentComponent::showClashDialog (const juce::String& presetName,
+                                        std::function<void (preset::PresetManager::ImportClash, bool)> decide)
+{
+    showDialog (std::make_unique<ClashDialog> (presetName, std::move (decide)));
 }
 
 void ContentComponent::showRenameDialog (const juce::File& file)
 {
-    showDialog (std::make_unique<TextPromptDialog> ("Rename preset", "NAME", file.getFileNameWithoutExtension(), "Rename",
-        [this, file] (const juce::String& newName)
-        {
-            const auto r = processor.getPresetManager().rename (file, newName);
-            if (r.ok)
-                dismissDialog();
-            else
-                showMessage ("Rename failed", r.error);
-        }));
-    if (auto* d = dynamic_cast<TextPromptDialog*> (dialog.get()))
-        d->getEditor().grabKeyboardFocus();
+    promptText ("Rename preset", "NAME", file.getFileNameWithoutExtension(), "Rename",
+                [safe = juce::Component::SafePointer<ContentComponent> (this), file] (const juce::String& newName)
+                {
+                    if (safe == nullptr)
+                        return;
+                    const auto r = safe->processor.getPresetManager().rename (file, newName);
+                    if (! r.ok)
+                        safe->showMessage ("Rename failed", r.error);
+                    safe->refreshAll();
+                });
 }
 
 void ContentComponent::showAboutPanel() { showDialog (std::make_unique<AboutDialog> (processor)); }
@@ -630,7 +707,8 @@ void ContentComponent::setPresetBrowserOpen (bool open, bool animate)
     const auto closedBounds = openBounds.translated (-openBounds.getWidth() - 12, 0);
     if (open)
     {
-        presetBrowser->refresh();
+        processor.getPresetManager().rescan();   // files may have changed on disk since it was last open
+        presetBrowser->scrollToCurrent();
         presetBrowser->setVisible (true);
         presetBrowser->toFront (false);
         if (dialog != nullptr)

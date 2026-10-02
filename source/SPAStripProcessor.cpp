@@ -1388,9 +1388,9 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming, bool 
     if (s.source.isEmpty())
         s.source = kIRSourceNone;
 
-    // SPASynth imports are converted (FX IDs are identical to the synth's, the
-    // 1.0.30 grain-spread migration applied) by preset::PresetManager before
-    // they get here; this function only ever sees SPAStrip-shaped state.
+    // This function only ever sees SPAStrip-shaped state (a host session, a preset
+    // file or an undo snapshot); the chain order saved by older builds is widened by
+    // FXChain::unpackOrder below.
     auto state = incoming.createCopy();
     const auto savedPresetName = state.getProperty (kPresetNameProperty).toString();
     const bool savedPresetEdited = (bool) state.getProperty (kPresetEditedProperty, false);

@@ -90,4 +90,69 @@ void setLastIRFolder (const juce::File& f)
     p->saveIfNeeded();
 }
 
+namespace
+{
+    // A newline-separated list stored under one key (preset names cannot contain a newline).
+    juce::StringArray readList (const char* key)
+    {
+        const juce::ScopedLock sl (lock());
+        if (! getSettingsFile().existsAsFile())
+            return {};
+        auto p = open();
+        auto list = juce::StringArray::fromLines (p->getValue (key));
+        list.removeEmptyStrings();
+        return list;
+    }
+
+    void writeListEntry (const char* key, const juce::String& entry, bool present)
+    {
+        const juce::ScopedLock sl (lock());
+        if (! present && ! getSettingsFile().existsAsFile())
+            return;
+        getSettingsFile().getParentDirectory().createDirectory();
+        auto p = open();
+        auto list = juce::StringArray::fromLines (p->getValue (key));
+        list.removeEmptyStrings();
+        if (present)
+            list.addIfNotAlreadyThere (entry);
+        else
+            list.removeString (entry);
+        p->setValue (key, list.joinIntoString ("\n"));
+        p->saveIfNeeded();
+    }
+}
+
+juce::StringArray getFavoritePresets() { return readList ("favoritePresets"); }
+
+void setPresetFavorite (const juce::String& key, bool favorite)
+{
+    if (key.isNotEmpty())
+        writeListEntry ("favoritePresets", key, favorite);
+}
+
+juce::StringArray getCollapsedPresetGroups() { return readList ("collapsedPresetGroups"); }
+
+void setPresetGroupCollapsed (const juce::String& key, bool collapsed)
+{
+    if (key.isNotEmpty())
+        writeListEntry ("collapsedPresetGroups", key, collapsed);
+}
+
+int getPresetGroupMode()
+{
+    const juce::ScopedLock sl (lock());
+    if (! getSettingsFile().existsAsFile())
+        return 0;
+    return open()->getIntValue ("presetGroupMode", 0) == 1 ? 1 : 0;
+}
+
+void setPresetGroupMode (int mode)
+{
+    const juce::ScopedLock sl (lock());
+    getSettingsFile().getParentDirectory().createDirectory();
+    auto p = open();
+    p->setValue ("presetGroupMode", mode == 1 ? 1 : 0);
+    p->saveIfNeeded();
+}
+
 } // namespace spa::ui::settings

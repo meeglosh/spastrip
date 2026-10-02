@@ -148,7 +148,6 @@ set(SPASTRIP_SOURCES
     source/SPAStripProcessorEdit.cpp
     source/params/Randomizer.cpp
     source/presets/PresetManager.cpp
-    source/presets/SPASynthImport.cpp
     source/params/ParameterRegistry.cpp
     source/mod/ModTargets.cpp
     source/ir/FactoryIRs.cpp

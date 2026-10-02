@@ -46,6 +46,15 @@ void DialogOverlay::paint (juce::Graphics& g)
 
 void DialogOverlay::resized() { layoutCard (getCardBounds()); }
 
+void DialogOverlay::setCardSize (juce::Point<int> newSize)
+{
+    if (newSize == cardSize)
+        return;
+    cardSize = newSize;
+    resized();
+    repaint();
+}
+
 void DialogOverlay::mouseDown (const juce::MouseEvent& e)
 {
     if (! getCardBounds().contains (e.getPosition()))
@@ -237,53 +246,166 @@ void TextPromptDialog::layoutCard (juce::Rectangle<int> card)
 }
 
 //==============================================================================
-SaveDialog::SaveDialog (juce::StringArray banks, juce::String initialName, juce::String initialBank, SaveFn save,
-                        std::function<void()> onSaved)
-    : DialogOverlay ({ 400, 206 }), bankList (std::move (banks)), saveFn (std::move (save)), saved (std::move (onSaved))
+ConfirmDialog::ConfirmDialog (juce::String t, juce::String body, juce::String okLabel, std::function<void()> onOk,
+                              juce::Point<int> size)
+    : DialogOverlay (size), title (std::move (t))
 {
-    for (auto* l : { &nameLabel, &bankLabel })
+    text.setMultiLine (true, true);
+    text.setReadOnly (true);
+    text.setCaretVisible (false);
+    text.setFont (metrics::labelFont());
+    text.setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    text.setColour (juce::TextEditor::textColourId, currentTheme().textPrimary);
+    text.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    text.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    text.setText (body, false);
+    addAndMakeVisible (text);
+    okButton.setButtonText (okLabel);
+    // The action runs a turn later: it may open another dialog, which would otherwise
+    // destroy this one (and this very handler) while it is still executing.
+    okButton.onClick = [this, action = std::move (onOk)]
+    {
+        dismiss();
+        if (action)
+            juce::MessageManager::callAsync (action);
+    };
+    cancelButton.onClick = [this] { dismiss(); };
+    addAndMakeVisible (okButton);
+    addAndMakeVisible (cancelButton);
+}
+
+void ConfirmDialog::layoutCard (juce::Rectangle<int> card)
+{
+    auto r = card.reduced (16, 12);
+    r.removeFromTop (24);
+    auto buttons = r.removeFromBottom (28);
+    r.removeFromBottom (8);
+    text.setBounds (r);
+    okButton.setBounds (buttons.removeFromRight (120));
+    buttons.removeFromRight (8);
+    cancelButton.setBounds (buttons.removeFromRight (90));
+}
+
+//==============================================================================
+ClashDialog::ClashDialog (const juce::String& presetName, Decide d)
+    : DialogOverlay ({ 420, 150 }), decide (std::move (d))
+{
+    message.setText ("\"" + presetName + "\" already exists in the destination.", juce::dontSendNotification);
+    message.setFont (metrics::labelFont());
+    message.setMinimumHorizontalScale (1.0f);
+    addAndMakeVisible (message);
+    applyToRest.setColour (juce::ToggleButton::textColourId, currentTheme().textSecondary);
+    addAndMakeVisible (applyToRest);
+    replaceButton.onClick = [this] { choose (preset::PresetManager::ImportClash::replace); };
+    keepButton.onClick = [this] { choose (preset::PresetManager::ImportClash::keepBoth); };
+    skipButton.onClick = [this] { choose (preset::PresetManager::ImportClash::skip); };
+    for (auto* b : { &replaceButton, &keepButton, &skipButton })
+        addAndMakeVisible (*b);
+}
+
+void ClashDialog::choose (preset::PresetManager::ImportClash action)
+{
+    // The owner defers the dialog's destruction; the decision is delivered first.
+    const auto all = applyToRest.getToggleState();
+    auto cb = std::move (decide);
+    decide = nullptr;
+    dismiss();
+    if (cb)
+        juce::MessageManager::callAsync ([cb, action, all] { cb (action, all); });
+}
+
+void ClashDialog::layoutCard (juce::Rectangle<int> card)
+{
+    auto r = card.reduced (16, 12);
+    r.removeFromTop (28);
+    message.setBounds (r.removeFromTop (20));
+    r.removeFromTop (6);
+    applyToRest.setBounds (r.removeFromTop (24));
+    auto buttons = r.removeFromBottom (28);
+    skipButton.setBounds (buttons.removeFromRight (90));
+    buttons.removeFromRight (8);
+    keepButton.setBounds (buttons.removeFromRight (100));
+    buttons.removeFromRight (8);
+    replaceButton.setBounds (buttons.removeFromRight (90));
+}
+
+//==============================================================================
+SaveDialog::SaveDialog (const Init& init, SaveFn save, DefaultNameFn defaultName, NameTakenFn nameTaken,
+                        std::function<void()> onSaved)
+    : DialogOverlay ({ 400, 300 }), folders (init.userFolders), nameOwned (init.nameIsOwned),
+      saveFn (std::move (save)), defaultNameFn (std::move (defaultName)), nameTakenFn (std::move (nameTaken)),
+      saved (std::move (onSaved))
+{
+    for (auto* l : { &nameLabel, &typeLabel, &folderLabel })
     {
         l->setFont (metrics::smallFont());
         addAndMakeVisible (*l);
     }
     nameLabel.setText ("NAME", juce::dontSendNotification);
-    bankLabel.setText ("BANK", juce::dontSendNotification);
+    typeLabel.setText ("TYPE", juce::dontSendNotification);
+    folderLabel.setText ("FOLDER", juce::dontSendNotification);
 
-    nameEditor.setText (initialName, false);
+    nameEditor.setText (init.initialName, false);
     nameEditor.setSelectAllWhenFocused (true);
     nameEditor.setEscapeAndReturnKeysConsumed (false);
     nameEditor.onReturnKey = [this] { submit (false); };
-    nameEditor.onTextChange = [this] { warning.setVisible (false); replaceButton.setVisible (false); };
+    nameEditor.onTextChange = [this] { nameOwned = true; hideWarning(); };   // user typing only: setText below passes false
     addAndMakeVisible (nameEditor);
 
-    bankBox.addItem ("User (no bank)", 1);
-    int sel = 1, id = 2;
-    for (const auto& b : bankList)
+    typeBox.addItem ("(none)", 1);
+    int id = 2, selType = 1;
+    for (const auto& t : preset::PresetManager::presetTypes())
     {
-        bankBox.addItem (b, id);
-        if (b == initialBank)
-            sel = id;
+        typeBox.addItem (t, id);
+        if (t == init.initialType)
+            selType = id;
         ++id;
     }
-    newBankId = id;
-    bankBox.addItem ("New bank...", newBankId);
-    bankBox.setSelectedId (sel, juce::dontSendNotification);
-    bankBox.onChange = [this]
+    typeBox.setSelectedId (selType, juce::dontSendNotification);
+    typeBox.onChange = [this] { hideWarning(); refreshDefaultName(); updateHint(); };
+    addAndMakeVisible (typeBox);
+
+    hint.setFont (metrics::smallFont());
+    hint.setColour (juce::Label::textColourId, currentTheme().textSecondary);
+    hint.setJustificationType (juce::Justification::topLeft);
+    hint.setMinimumHorizontalScale (1.0f);
+    addAndMakeVisible (hint);
+
+    folderBox.addItem ("User (unfiled)", 1);
+    int fid = 2, selFolder = 1;
+    for (const auto& f : folders)
     {
-        newBankEditor.setVisible (bankBox.getSelectedId() == newBankId);
-        warning.setVisible (false);
-        replaceButton.setVisible (false);
-        if (newBankEditor.isVisible())
-            newBankEditor.grabKeyboardFocus();
+        folderBox.addItem (f.replace ("/", "  /  "), fid);
+        if (f == init.defaultFolder)
+            selFolder = fid;
+        ++fid;
+    }
+    autoItemId = fid++;
+    folderBox.addItem ("Auto (by type)", autoItemId);
+    newFolderItemId = fid;
+    folderBox.addItem ("New folder...", newFolderItemId);
+    folderBox.setSelectedId (init.startAuto ? autoItemId : selFolder, juce::dontSendNotification);
+    folderBox.onChange = [this]
+    {
+        const bool show = folderBox.getSelectedId() == newFolderItemId;
+        newFolderEditor.setVisible (show);
+        hideWarning();
+        fit();
+        refreshDefaultName();
+        if (show)
+            newFolderEditor.grabKeyboardFocus();
     };
-    addAndMakeVisible (bankBox);
-    newBankEditor.setTextToShowWhenEmpty ("New bank name", currentTheme().textSecondary);
-    newBankEditor.setEscapeAndReturnKeysConsumed (false);
-    newBankEditor.onReturnKey = [this] { submit (false); };
-    addChildComponent (newBankEditor);
+    addAndMakeVisible (folderBox);
+    newFolderEditor.setTextToShowWhenEmpty ("New folder name", currentTheme().textSecondary);
+    newFolderEditor.setEscapeAndReturnKeysConsumed (false);
+    newFolderEditor.onReturnKey = [this] { submit (false); };
+    newFolderEditor.onTextChange = [this] { hideWarning(); refreshDefaultName(); };
+    addChildComponent (newFolderEditor);
 
     warning.setFont (metrics::smallFont());
     warning.setColour (juce::Label::textColourId, currentTheme().meterYellow);
+    warning.setJustificationType (juce::Justification::topLeft);
+    warning.setMinimumHorizontalScale (1.0f);
     addChildComponent (warning);
 
     replaceButton.onClick = [this] { submit (true); };
@@ -292,32 +414,126 @@ SaveDialog::SaveDialog (juce::StringArray banks, juce::String initialName, juce:
     saveButton.onClick = [this] { submit (false); };
     addAndMakeVisible (cancelButton);
     addAndMakeVisible (saveButton);
+
+    updateHint();
+    fit();
 }
 
-juce::String SaveDialog::selectedBank() const
+juce::String SaveDialog::currentType() const
 {
-    const int id = bankBox.getSelectedId();
-    if (id == 1) return {};
-    if (id == newBankId) return newBankEditor.getText().trim();
-    return bankList[id - 2];
+    return typeBox.getSelectedId() > 1 ? typeBox.getText() : juce::String();
+}
+
+juce::String SaveDialog::currentFolder() const
+{
+    const auto sel = folderBox.getSelectedId();
+    if (sel == autoItemId)
+        return currentType();   // User/<Type>/ (created on demand); no type -> unfiled
+    if (sel == newFolderItemId)
+        return preset::PresetManager::sanitiseFileName (newFolderEditor.getText());
+    if (sel > 1)
+        return folders[sel - 2];
+    return {};
+}
+
+void SaveDialog::refreshDefaultName()
+{
+    if (nameOwned || ! defaultNameFn)
+        return;
+    nameEditor.setText (defaultNameFn (currentType(), currentFolder()), false);
+    nameEditor.selectAll();
+}
+
+void SaveDialog::updateHint()
+{
+    const auto t = currentType();
+    hint.setText ("Shows under " + (t.isEmpty() ? juce::String (preset::PresetManager::otherTypeLabel) : t).toUpperCase()
+                      + " when the browser is grouped by type.",
+                  juce::dontSendNotification);
+}
+
+void SaveDialog::hideWarning()
+{
+    if (! warning.isVisible() && ! replaceButton.isVisible())
+        return;
+    warning.setVisible (false);
+    replaceButton.setVisible (false);
+    fit();
+}
+
+void SaveDialog::showWarning (const juce::String& text, bool offerReplace)
+{
+    warning.setText (text, juce::dontSendNotification);
+    warning.setVisible (true);
+    replaceButton.setVisible (offerReplace);
+    fit();
 }
 
 void SaveDialog::submit (bool replace)
 {
     if (! saveFn)
         return;
-    const auto r = saveFn (nameEditor.getText(), selectedBank(), replace);
-    if (r.ok)
+    const auto sel = folderBox.getSelectedId();
+    if (sel == newFolderItemId && currentFolder().isEmpty())
+    {
+        showWarning ("Enter a name for the new folder.", false);
+        return;
+    }
+
+    SaveRequest req;
+    req.name = nameEditor.getText().trim();
+    req.type = currentType();
+    req.folder = currentFolder();
+    req.replace = replace;
+    req.autoFolder = sel == autoItemId;
+    req.createFolder = sel == autoItemId || sel == newFolderItemId;
+
+    if (req.name.isEmpty())
+    {
+        showWarning ("Enter a name.", false);
+        return;
+    }
+    const auto clash = [&] { return "A preset called \"" + req.name + "\" already exists in this folder. Change the name, or replace it (the old one goes to the Trash)."; };
+    if (! replace && nameTakenFn && nameTakenFn (req.name, req.folder))
+    {
+        showWarning (clash(), true);
+        return;
+    }
+
+    const auto res = saveFn (req);
+    if (res.ok)
     {
         if (saved)
             saved();
         dismiss();
-        return;
     }
-    warning.setText (r.clash ? "A preset with that name already exists in this bank." : r.error,
-                     juce::dontSendNotification);
-    warning.setVisible (true);
-    replaceButton.setVisible (r.clash);
+    else if (res.clash)
+        showWarning (clash(), true);
+    else
+        showWarning (res.error.isEmpty() ? juce::String ("The preset could not be saved.") : res.error, false);
+}
+
+int SaveDialog::contentHeight() const
+{
+    int h = 12 + 28;                 // card padding + title
+    h += 14 + 26 + 8;                // NAME
+    h += 14 + 26 + 4 + 28 + 8;       // TYPE + hint
+    h += 14 + 26 + 8;                // FOLDER
+    if (newFolderEditor.isVisible())
+        h += 26 + 8;
+    if (warning.isVisible())
+    {
+        h += 42 + 6;
+        if (replaceButton.isVisible())
+            h += 28 + 8;
+    }
+    h += 28 + 12;                    // buttons + card padding
+    return h;
+}
+
+void SaveDialog::fit()
+{
+    setCardSize ({ 400, contentHeight() });
     resized();
 }
 
@@ -328,24 +544,33 @@ void SaveDialog::layoutCard (juce::Rectangle<int> card)
     nameLabel.setBounds (r.removeFromTop (14));
     nameEditor.setBounds (r.removeFromTop (26));
     r.removeFromTop (8);
-    bankLabel.setBounds (r.removeFromTop (14));
-    auto bankRow = r.removeFromTop (26);
-    if (newBankEditor.isVisible())
+    typeLabel.setBounds (r.removeFromTop (14));
+    typeBox.setBounds (r.removeFromTop (26));
+    r.removeFromTop (4);
+    hint.setBounds (r.removeFromTop (28));
+    r.removeFromTop (8);
+    folderLabel.setBounds (r.removeFromTop (14));
+    folderBox.setBounds (r.removeFromTop (26));
+    r.removeFromTop (8);
+    if (newFolderEditor.isVisible())
     {
-        bankBox.setBounds (bankRow.removeFromLeft (bankRow.getWidth() / 2 - 4));
-        bankRow.removeFromLeft (8);
-        newBankEditor.setBounds (bankRow);
+        newFolderEditor.setBounds (r.removeFromTop (26));
+        r.removeFromTop (8);
     }
-    else
-        bankBox.setBounds (bankRow);
-    r.removeFromTop (6);
-    warning.setBounds (r.removeFromTop (16));
+    if (warning.isVisible())
+    {
+        warning.setBounds (r.removeFromTop (42));
+        r.removeFromTop (6);
+        if (replaceButton.isVisible())
+        {
+            replaceButton.setBounds (r.removeFromTop (28).removeFromLeft (110));
+            r.removeFromTop (8);
+        }
+    }
     auto buttons = r.removeFromBottom (28);
     saveButton.setBounds (buttons.removeFromRight (90));
     buttons.removeFromRight (8);
     cancelButton.setBounds (buttons.removeFromRight (90));
-    buttons.removeFromRight (8);
-    replaceButton.setBounds (buttons.removeFromRight (90));
 }
 
 //==============================================================================

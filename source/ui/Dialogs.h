@@ -23,8 +23,11 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     bool keyPressed (const juce::KeyPress&) override;
     juce::Rectangle<int> getCardBounds() const;
+    juce::Point<int> getCardSize() const { return cardSize; }
 
 protected:
+    // For dialogs whose content changes height (the save panel's optional rows).
+    void setCardSize (juce::Point<int> newSize);
     virtual void layoutCard (juce::Rectangle<int> card) = 0;
     virtual juce::String getCardTitle() const { return {}; }
     void dismiss() { if (onDismiss) onDismiss(); }
@@ -93,31 +96,114 @@ private:
 };
 
 //==============================================================================
-// SAVE / SAVE AS: name + bank (the user root, an existing bank folder or a new one).
+// Asks before something is moved to the Trash / replaced. OK runs `onOk` (deferred
+// by the owner); Esc / Cancel / a click outside only dismiss.
+class ConfirmDialog : public DialogOverlay
+{
+public:
+    ConfirmDialog (juce::String title, juce::String body, juce::String okLabel, std::function<void()> onOk,
+                   juce::Point<int> size = { 420, 150 });
+
+    void accept() { okButton.onClick(); }   // the OK button (also the test entry point)
+    juce::String getBodyForTest() const { return text.getText(); }
+
+private:
+    void layoutCard (juce::Rectangle<int>) override;
+    juce::String getCardTitle() const override { return title; }
+
+    juce::String title;
+    juce::TextEditor text;
+    juce::TextButton okButton, cancelButton { "Cancel" };
+};
+
+//==============================================================================
+// Importing a preset whose name is already taken: Replace / Keep Both / Skip, with
+// "do this for every clash in this import".
+class ClashDialog : public DialogOverlay
+{
+public:
+    using Decide = std::function<void (preset::PresetManager::ImportClash, bool applyToRest)>;
+    ClashDialog (const juce::String& presetName, Decide decide);
+
+    void choose (preset::PresetManager::ImportClash);   // also the test entry point
+    void setApplyToRest (bool on) { applyToRest.setToggleState (on, juce::dontSendNotification); }
+
+private:
+    void layoutCard (juce::Rectangle<int>) override;
+    juce::String getCardTitle() const override { return "Preset already exists"; }
+
+    Decide decide;
+    juce::Label message;
+    juce::ToggleButton applyToRest { "Do this for every clash in this import" };
+    juce::TextButton replaceButton { "Replace" }, keepButton { "Keep both" }, skipButton { "Skip" };
+};
+
+//==============================================================================
+// SAVE / SAVE AS (the synth's save panel, in-editor): NAME, TYPE (the preset types, or
+// none), FOLDER (unfiled, the user's folders, "Auto (by type)", "New folder...") with a
+// hint saying where the preset will show under the type grouping, Cancel / Save.
+// A clash shows an inline warning with Replace (the old one goes to the Trash).
+// The default name follows the TYPE ("Drums 1", "Drums 2" ...) until the user types
+// one of their own; a patch that came from a preset starts from that preset's name.
+struct SaveRequest
+{
+    juce::String name, type, folder;
+    bool replace = false, createFolder = false, autoFolder = false;
+};
+
 class SaveDialog : public DialogOverlay
 {
 public:
-    // save(name, bank, replace) performs the save and returns the manager's result.
-    using SaveFn = std::function<preset::PresetManager::SaveResult (const juce::String&, const juce::String&, bool)>;
-    SaveDialog (juce::StringArray banks, juce::String initialName, juce::String initialBank, SaveFn save,
+    struct Init
+    {
+        juce::StringArray userFolders;
+        juce::String defaultFolder;    // pre-selected folder ("" = User root)
+        juce::String initialType;      // "" = (none)
+        juce::String initialName;
+        bool nameIsOwned = false;      // a preset's own name: TYPE changes never replace it
+        bool startAuto = false;        // "Auto (by type)" kept from the last save
+    };
+    using SaveFn = std::function<preset::PresetManager::SaveResult (const SaveRequest&)>;
+    using DefaultNameFn = std::function<juce::String (const juce::String& type, const juce::String& folder)>;
+    using NameTakenFn = std::function<bool (const juce::String& name, const juce::String& folder)>;
+
+    SaveDialog (const Init&, SaveFn save, DefaultNameFn defaultName, NameTakenFn nameTaken,
                 std::function<void()> onSaved);
 
     void submit (bool replace);
     juce::TextEditor& getNameEditor() { return nameEditor; }
+    juce::ComboBox& getTypeBox() { return typeBox; }
+    juce::ComboBox& getFolderBox() { return folderBox; }
+    juce::TextEditor& getNewFolderEditor() { return newFolderEditor; }
     juce::String getWarningForTest() const { return warning.getText(); }
+    juce::String getHintForTest() const { return hint.getText(); }
+    bool isReplaceVisibleForTest() const { return replaceButton.isVisible(); }
+    bool isNameOwnedForTest() const { return nameOwned; }
+    int getAutoItemId() const { return autoItemId; }
+    int getNewFolderItemId() const { return newFolderItemId; }
 
 private:
     void layoutCard (juce::Rectangle<int>) override;
     juce::String getCardTitle() const override { return "Save preset"; }
-    juce::String selectedBank() const;
+    int contentHeight() const;
+    void fit();
+    juce::String currentType() const;
+    juce::String currentFolder() const;
+    void refreshDefaultName();
+    void updateHint();
+    void hideWarning();
+    void showWarning (const juce::String& text, bool offerReplace);
 
-    juce::StringArray bankList;
-    juce::Label nameLabel, bankLabel, warning;
-    juce::TextEditor nameEditor, newBankEditor;
-    juce::ComboBox bankBox;
+    juce::StringArray folders;
+    juce::Label nameLabel, typeLabel, folderLabel, hint, warning;
+    juce::TextEditor nameEditor, newFolderEditor;
+    juce::ComboBox typeBox, folderBox;
     juce::TextButton saveButton { "Save" }, replaceButton { "Replace" }, cancelButton { "Cancel" };
-    int newBankId = 0;
+    int autoItemId = 0, newFolderItemId = 0;
+    bool nameOwned = false;
     SaveFn saveFn;
+    DefaultNameFn defaultNameFn;
+    NameTakenFn nameTakenFn;
     std::function<void()> saved;
 };
 

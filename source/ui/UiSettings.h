@@ -25,4 +25,15 @@ void clearAccentColor();
 juce::File getLastIRFolder();
 void setLastIRFolder (const juce::File& fileOrFolder);
 
+// Preset browser preferences (machine-wide, like SPASynth's): the starred presets
+// (keys are "<bank or User>/<name>", see PresetManager::favouriteKey), the groups
+// the user collapsed (keys "U:<folder>" / "F:<bank>" / "T:<type>") and the list
+// grouping (0 = by folder, 1 = by type).
+juce::StringArray getFavoritePresets();
+void setPresetFavorite (const juce::String& key, bool favorite);
+juce::StringArray getCollapsedPresetGroups();
+void setPresetGroupCollapsed (const juce::String& key, bool collapsed);
+int getPresetGroupMode();
+void setPresetGroupMode (int mode);
+
 } // namespace spa::ui::settings
