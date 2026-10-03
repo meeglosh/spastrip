@@ -19,9 +19,12 @@ No Standalone, no AAX.
   README.txt, QUICKSTART.txt, `SPAStrip-1.0.0-macOS.pkg` (signed, notarized, stapled),
   `SPAStrip-1.0.0-Windows.exe` (unsigned). Both built from `main` at `b901b76`.
   Checksums (md5): pkg `9c3e1864251163266f9a692850e0d66e`, exe `dbaa54d26b9aa99cbaed101356aca327`.
-- Not yet shared with testers (Paul, Phil). Version bump rule (from SPASynth): once a
-  build has been sent to anyone, the next build gets a new version; until then 1.0.0 may
-  be overwritten in place.
+- 1.0.0 was **sent to the testers (Paul, Phil) on 2026-10-02**, so it is frozen. The
+  version is now **1.0.1** in `CMakeLists.txt`; the next batch of work ships as 1.0.1.
+  Version bump rule (from SPASynth): once a build has been sent to anyone, the next build
+  gets a new version; an unsent build may be overwritten in place at the same version.
+  The Inno script's `AppVersion` default ("1.0.0") is only a fallback; CI passes the
+  CMake version.
 - **Branches:** `main` and `engine` contain identical files. GitHub repo
   `meeglosh/spastrip` is PRIVATE. A local-only branch `backup/engine-pre-purge` holds the
   pre-purge history (it contains an accidentally committed 18 MB `ui-snapshots/` folder);
