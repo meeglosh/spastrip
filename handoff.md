@@ -1,5 +1,7 @@
 # SPAStrip handoff
 
+**2026-10-03: 1.0.1 WITH LICENSING SENT to Paul and Phil** (main 333e4f9; dist/shopify/SPAStrip-1.0.1/ staged mac+win; NFR serials issued to Mike/Paul/Phil). Bump to 1.0.2 for anything after this. Licensing pinned in libs/spa-licensing.pin; CI needs secret SPA_LICENSING_TOKEN. Cross-product state: ~/spasynth/handoff.md top section.
+
 State as of 2026-10-02. Read this before starting work in a new session.
 
 ## What SPAStrip is
