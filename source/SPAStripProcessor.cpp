@@ -289,7 +289,7 @@ SPAStripProcessor::SPAStripProcessor()
         info.apiBaseUrl = SPA_LICENSING_API_BASE_URL;
         info.buyUrl = "https://silverplatteraudio.com";       // placeholder until the store link is final
         info.offlineUrl = juce::String (SPA_LICENSING_API_BASE_URL) + "/offline";
-        info.accountUrl = "https://silverplatteraudio.com";   // placeholder: SPAStation account page
+        // "Open my account": SPAStation Licences view if installed, else info.accountFallbackUrl.
         licenceController = std::make_unique<spa::lic::LicenseController> (*licenceState, std::move (info));
         licenceController->onLicenceChanged = [this] { licenceBroadcaster.sendChangeMessage(); };
     }
