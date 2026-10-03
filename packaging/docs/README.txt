@@ -122,7 +122,7 @@ for their own undo.
 
 SUPPORT
 -------
-  info@silverplatteraudio.com
+  support@silverplatteraudio.com
   https://www.silverplatteraudio.com
 
 When you write to us, open the SPAStrip menu, choose "About SPAStrip..." and

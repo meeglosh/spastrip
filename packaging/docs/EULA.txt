@@ -142,7 +142,7 @@ changes are described in CREDITS.txt.
 14. CONTACT
 Silverplatter Audio, Kenzora Games Inc., Quebec, Canada.
 https://www.silverplatteraudio.com
-info@silverplatteraudio.com
+support@silverplatteraudio.com
 
 (c) Kenzora Games Inc. All rights reserved.
 Silverplatter Audio is a trademark of Kenzora Games Inc.
