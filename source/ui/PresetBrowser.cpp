@@ -1217,6 +1217,8 @@ void PresetBrowser::exportRow (int row)
     if (p == nullptr)
         return;
     const auto info = *p;
+    if (! processor.getPresetManager().checkSaveAllowed())   // demo: no chooser, licence panel instead
+        return;
     chooser = std::make_unique<juce::FileChooser> ("Export preset",
                                                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
                                                        .getChildFile (info.name + PM::presetExtension),
@@ -1238,6 +1240,8 @@ void PresetBrowser::exportRow (int row)
 void PresetBrowser::exportFolderRel (const juce::String& rel)
 {
     const auto name = rel.fromLastOccurrenceOf ("/", false, false);
+    if (! processor.getPresetManager().checkSaveAllowed())   // demo: no chooser, licence panel instead
+        return;
     chooser = std::make_unique<juce::FileChooser> ("Export folder",
                                                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
                                                        .getChildFile (name + ".zip"),

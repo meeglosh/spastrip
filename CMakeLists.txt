@@ -188,6 +188,24 @@ target_link_libraries(SPAStrip
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+# Licensing (licensing branch). The spa-licensing repo is PRIVATE, so it is
+# opt-in by path: -DSPASTRIP_SPA_LICENSING_DIR=/path/to/spa-licensing. Unset
+# (main, CI) SPAStrip builds exactly as before: no licence checks at all.
+# SPAStripSnapshots is deliberately left without it (it would start a real
+# trial on the machine that renders screenshots).
+set(SPASTRIP_SPA_LICENSING_DIR "" CACHE PATH "Path to a spa-licensing checkout (optional)")
+# Licensing API base URL: empty = the module's built-in default.
+set(SPASTRIP_LICENSING_API_URL "" CACHE STRING "Licensing API base URL (empty = module default)")
+set(_spastrip_lic_url_def "")
+if(SPASTRIP_LICENSING_API_URL)
+    set(_spastrip_lic_url_def SPA_LICENSING_API_BASE_URL="${SPASTRIP_LICENSING_API_URL}")
+endif()
+if(SPASTRIP_SPA_LICENSING_DIR)
+    juce_add_module(${SPASTRIP_SPA_LICENSING_DIR}/spa_licensing)
+    target_link_libraries(SPAStrip PRIVATE spa_licensing)
+    target_compile_definitions(SPAStrip PRIVATE SPASTRIP_HAS_SPA_LICENSING=1 ${_spastrip_lic_url_def})
+endif()
+
 # Headless test target: compiles the same sources as the plugin (JUCE modules
 # are INTERFACE targets, so a console app is the supported way to reuse them).
 option(SPASTRIP_BUILD_TESTS "Build headless DSP/processor tests" ON)
@@ -216,6 +234,15 @@ if(SPASTRIP_BUILD_TESTS)
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
+
+    if(SPASTRIP_SPA_LICENSING_DIR)
+        # SPA_LICENSING_TESTS: this target (only) trusts the committed TEST keys.
+        # The suite installs a temp licensing root, a fake machine hash and a
+        # counting fake transport at start-up: nothing real is read/written/sent.
+        target_link_libraries(SPAStripTests PRIVATE spa_licensing)
+        target_compile_definitions(SPAStripTests PRIVATE SPASTRIP_HAS_SPA_LICENSING=1 SPA_LICENSING_TESTS=1
+            ${_spastrip_lic_url_def})
+    endif()
 
     add_test(NAME SPAStripTests COMMAND SPAStripTests)
 endif()

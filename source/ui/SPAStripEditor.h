@@ -11,6 +11,7 @@
 #include "ModViz.h"
 #include "PresetBrowser.h"
 #include "SPAStripLookAndFeel.h"
+#include "LicenceUi.h"
 #include "StripPanels.h"
 
 namespace spa
@@ -70,6 +71,16 @@ public:
     void dismissDialog();
     juce::Component* getDialogForTest() const { return dialog.get(); }
 
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Licence panel (logo menu "Licence...", the brand-band badge, or a blocked
+    // preset save/export in demo mode). banner = optional one-line reason.
+    void showLicencePanel (const juce::String& banner = {});
+    LicenceDialog* getLicenceDialogForTest() const { return dynamic_cast<LicenceDialog*> (dialog.get()); }
+    LicenceBadge& getLicenceBadgeForTest() { return licenceBadge; }
+    juce::Button& getLogoButtonForTest() { return logoButton; }
+    juce::PopupMenu createLogoMenuForTest() { return createLogoMenu(); }
+#endif
+
     // ModAssignHost.
     void showModAssignMenu (juce::Slider&, const juce::String& paramID) override;
     // The menu's action (also driven by tests): assign (or, when already assigned, remove)
@@ -120,6 +131,12 @@ private:
     void updateUndoButtons();
     void syncTabOrder();
     void showLogoMenu();
+    juce::PopupMenu createLogoMenu();
+#if SPASTRIP_HAS_SPA_LICENSING
+    LicenceBadge licenceBadge;
+    void refreshLicenceBadge();
+    juce::String licenceStateLine();
+#endif
     void onSaveClicked();
     void showDialog (std::unique_ptr<DialogOverlay>);
     void tabChanged();
@@ -206,6 +223,7 @@ private:
     bool suppressScaleSave = false;
     bool screenFitCheckDone = false;
     bool hostViewWakeupDone = false;
+    bool trialStartNoted = false;   // licensing builds only
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SPAStripEditor)
 };
