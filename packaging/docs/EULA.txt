@@ -14,8 +14,8 @@ this agreement is available on request from the address below.
 1. LICENSE GRANT
 Kenzora Games Inc. ("the Licensor") grants you a non-exclusive, perpetual
 license to install and use SPAStrip ("the Software") on computers you own or
-use, for your own music and audio production, in any number of your own
-studios and in live performance. A license is held by one person. Household
+use, for your own music and audio production and in live performance, subject
+to the activation limit in clause 6. A license is held by one person. Household
 members may use your installations; an organisation needs one license per
 person who uses the Software.
 
@@ -54,17 +54,21 @@ You may transfer your license permanently to another person with the Licensor's
 prior written consent, provided you transfer it in whole, keep no copies, and
 the recipient accepts these terms.
 
-6. UPDATES, SUPPORT AND FUTURE LICENSING
+6. UPDATES, SUPPORT, LICENSING AND ACTIVATION
 Updates, if any, are provided at the Licensor's discretion and are covered by
 this agreement unless they arrive with their own terms. The Licensor may change
 or discontinue the Software or its supported formats and operating systems.
 
-SPAStrip version 1.0.0 does not require a serial number or any activation. The
-Licensor may, in a later update, introduce serial numbers, activation on a
-limited number of computers, or similar licensing measures, and may make them a
-condition of using that update. Terms that accompany an update apply to that
-update, and if you do not accept them you should not install it. Nothing in
-this clause is a promise that any such measure will be introduced.
+SPAStrip uses a serial number. The Software runs as a full, unrestricted trial
+for 14 days from the first time you open the plugin window. After the trial,
+until a valid serial is activated, SPAStrip runs in demo mode: it outputs a
+short silence about once a minute, and saving and exporting presets are turned
+off. Your projects and sessions always open in either mode. Each serial may be
+activated on up to 3 computers at a time. You may deactivate a computer at any
+time, from within the plugin or from our SPAStation app, and use that
+activation on another computer. Activation is a one-time step, done online or
+offline. After activation, SPAStrip does not check in with our servers or
+require an internet connection to keep working.
 
 7. NO WARRANTY
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR

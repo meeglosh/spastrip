@@ -120,6 +120,23 @@ Shift+Cmd+Z (macOS), or Ctrl+Z, Shift+Ctrl+Z and Ctrl+Y (Windows), work when
 the plug-in window has keyboard focus, though some hosts keep these shortcuts
 for their own undo.
 
+TRIAL, SERIAL AND ACTIVATION
+----------------------------
+SPAStrip runs as a full 14-day trial, starting the first time you open the
+plugin window. After that it switches to demo mode until you activate a
+serial: it goes quiet for a moment about once a minute, and saving and
+exporting presets are turned off. Loading presets still works, and your
+sessions always open either way.
+
+Your serial activates SPAStrip on up to 3 computers. To activate, open the
+plugin, click the license badge and enter your serial. Activation takes one
+trip online; if the computer is offline, the same panel walks you through
+offline activation from another device. Once activated, SPAStrip never needs
+to check in with us again.
+
+Moving to a new computer? Deactivate the old one anytime, from the plugin or
+from the Licenses view in SPAStation, and activate the new one.
+
 SUPPORT
 -------
   support@silverplatteraudio.com
@@ -130,6 +147,5 @@ press "Copy Info"; paste that into your message. It contains the version,
 your operating system and your host, which helps us help you faster.
 
 Made with care by Silverplatter Audio, a boutique sound-effects library
-company. SPAStrip 1.0 has no copy protection or activation; the EULA explains
-that we may add licensing measures in a later update. We trust you. Please
-don't share it around; that trust is what keeps products like this possible.
+company. Please don't share it around; your support is what keeps products
+like this possible.

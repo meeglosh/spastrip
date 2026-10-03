@@ -29,8 +29,37 @@ jobs:
         with:
           submodules: recursive
 
+      # The licensing module lives in the PRIVATE repo meeglosh/spa-licensing.
+      # SPA_LICENSING_TOKEN is a fine-grained, read-only PAT for that one repo.
+      # Fail loudly without it: a release build must never ship unlicensed.
+      # (The token is only ever passed to actions/checkout, never echoed, and
+      # this workflow has no pull_request_target, so forks never see it.)
+      - name: Require licensing token
+        shell: bash
+        env:
+          HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT for meeglosh/spa-licensing (Contents: Read). Release builds refuse to build without the licensing module."
+            exit 1
+          fi
+
+      - name: Read licensing pin
+        id: licpin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-licensing.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-licensing (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-licensing
+          ref: ${{ steps.licpin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-licensing
+          persist-credentials: false
+
       - name: Configure
-        run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF
+        run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_REQUIRE_LICENSING=ON -DSPASTRIP_SPA_LICENSING_DIR:PATH=libs/spa-licensing
 
       - name: Build (VST3 + tests)
         run: cmake --build build --config Release --parallel --target SPAStrip_VST3 SPAStripTests
@@ -132,8 +161,37 @@ jobs:
         with:
           submodules: recursive
 
+      # The licensing module lives in the PRIVATE repo meeglosh/spa-licensing.
+      # SPA_LICENSING_TOKEN is a fine-grained, read-only PAT for that one repo.
+      # Fail loudly without it: a release build must never ship unlicensed.
+      # (The token is only ever passed to actions/checkout, never echoed, and
+      # this workflow has no pull_request_target, so forks never see it.)
+      - name: Require licensing token
+        shell: bash
+        env:
+          HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT for meeglosh/spa-licensing (Contents: Read). Release builds refuse to build without the licensing module."
+            exit 1
+          fi
+
+      - name: Read licensing pin
+        id: licpin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-licensing.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-licensing (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-licensing
+          ref: ${{ steps.licpin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-licensing
+          persist-credentials: false
+
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_UNIVERSAL_BINARY=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_UNIVERSAL_BINARY=ON -DSPASTRIP_REQUIRE_LICENSING=ON -DSPASTRIP_SPA_LICENSING_DIR:PATH=libs/spa-licensing
 
       - name: Build (AU + VST3 + tests)
         run: cmake --build build --config Release --parallel

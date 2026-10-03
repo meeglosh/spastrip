@@ -36,11 +36,13 @@ No Standalone, no AAX.
 1. **EULA legal review** before sale (owner arranging). Especially clause 3 / 13: six of
    the 19 factory impulse responses are CC BY 4.0, so the "no redistribution of factory
    content" limit is written not to restrict them beyond their own licences.
-2. **Licensing / DRM**: not in 1.0.0. Planned: serials with activation on up to 3 machines
-   via SPAStation, built first for SPASynth + SPAStation, then applied to SPAGlitch and
-   SPAStrip once validated. Design doc lives on SPASynth's `licensing` branch
-   (`docs/licensing-design.md`; reserves serial prefix `STP-` for SPAStrip). EULA clause 6
-   already allows activation to be introduced later.
+2. **Licensing**: merged to `main` (2026-10-03), not in any build yet (1.0.0 has none).
+   14-day trial then demo (silence ~every 60 s, no preset save/export), 3 machines,
+   module `spa-licensing` pinned in `libs/spa-licensing.pin` (gitignored checkout via
+   `scripts/fetch_spa_licensing.sh`). `build_release.sh` and CI configure with
+   `SPASTRIP_REQUIRE_LICENSING=ON` and fail without the module; CI needs the repo secret
+   `SPA_LICENSING_TOKEN` (read-only PAT for meeglosh/spa-licensing). EULA clause 6 and
+   README.txt describe it.
 3. **Windows code signing**: certificate coming. The Inno script keeps a `/DSignToolCmd`
    hook (see header of `installers/windows/SPAStrip.iss`). Until signed, users see a
    SmartScreen warning.

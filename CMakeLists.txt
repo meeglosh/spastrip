@@ -188,17 +188,48 @@ target_link_libraries(SPAStrip
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
-# Licensing (licensing branch). The spa-licensing repo is PRIVATE, so it is
-# opt-in by path: -DSPASTRIP_SPA_LICENSING_DIR=/path/to/spa-licensing. Unset
-# (main, CI) SPAStrip builds exactly as before: no licence checks at all.
+# Licensing. The module lives in the PRIVATE repo meeglosh/spa-licensing,
+# checked out (gitignored) at libs/spa-licensing at the commit pinned in
+# libs/spa-licensing.pin -- by scripts/build_release.sh locally and by
+# actions/checkout in CI, so both build the same module. It is NOT a git
+# submodule. Release builds pass -DSPASTRIP_REQUIRE_LICENSING=ON and fail if
+# the module is missing (never ship unlicensed by accident); dev builds without
+# the checkout build exactly as before, with no licence checks.
 # SPAStripSnapshots is deliberately left without it (it would start a real
 # trial on the machine that renders screenshots).
-set(SPASTRIP_SPA_LICENSING_DIR "" CACHE PATH "Path to a spa-licensing checkout (optional)")
-# Licensing API base URL: empty = the module's built-in default.
-set(SPASTRIP_LICENSING_API_URL "" CACHE STRING "Licensing API base URL (empty = module default)")
+set(_spa_lic_default "")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/spa-licensing/spa_licensing/spa_licensing.h")
+    set(_spa_lic_default "${CMAKE_CURRENT_SOURCE_DIR}/libs/spa-licensing")
+endif()
+set(SPASTRIP_SPA_LICENSING_DIR "${_spa_lic_default}" CACHE PATH "Path to a spa-licensing checkout (empty = unlicensed dev build)")
+option(SPASTRIP_REQUIRE_LICENSING "Fail the configure if the licensing module is missing (release builds)" OFF)
+# Licensing API base URL: empty = the module's built-in production default.
+# (Deliberately not spelled out here: a test forbids the SPASynth preset
+# extension anywhere in this file, and the production host name contains it.)
+set(SPASTRIP_LICENSING_API_URL "" CACHE STRING "Licensing API base URL (empty = module's production default)")
+if(SPASTRIP_REQUIRE_LICENSING)
+    if(NOT SPASTRIP_SPA_LICENSING_DIR OR NOT EXISTS "${SPASTRIP_SPA_LICENSING_DIR}/spa_licensing/spa_licensing.h")
+        message(FATAL_ERROR "SPASTRIP_REQUIRE_LICENSING=ON but the spa-licensing module was not found "
+            "(SPASTRIP_SPA_LICENSING_DIR='${SPASTRIP_SPA_LICENSING_DIR}'). Check it out at libs/spa-licensing "
+            "at the commit in libs/spa-licensing.pin.")
+    endif()
+    if(SPASTRIP_LICENSING_API_URL)
+        message(FATAL_ERROR "Release builds must use the module's built-in production licensing URL: "
+            "leave SPASTRIP_LICENSING_API_URL empty (it is '${SPASTRIP_LICENSING_API_URL}')")
+    endif()
+endif()
 set(_spastrip_lic_url_def "")
 if(SPASTRIP_LICENSING_API_URL)
     set(_spastrip_lic_url_def SPA_LICENSING_API_BASE_URL="${SPASTRIP_LICENSING_API_URL}")
+endif()
+if(SPASTRIP_SPA_LICENSING_DIR)
+    if(SPASTRIP_LICENSING_API_URL)
+        message(STATUS "SPAStrip licensing: ON (${SPASTRIP_SPA_LICENSING_DIR}, ${SPASTRIP_LICENSING_API_URL})")
+    else()
+        message(STATUS "SPAStrip licensing: ON (${SPASTRIP_SPA_LICENSING_DIR}, module default production URL)")
+    endif()
+else()
+    message(STATUS "SPAStrip licensing: OFF (dev build, no licence checks)")
 endif()
 if(SPASTRIP_SPA_LICENSING_DIR)
     juce_add_module(${SPASTRIP_SPA_LICENSING_DIR}/spa_licensing)

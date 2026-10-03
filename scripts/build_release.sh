@@ -279,8 +279,16 @@ done
 # The targets are named explicitly: SPASynth's notes record a trap where only the
 # test binary got built and the installer step then found nothing to package.
 # The artefacts are asserted below.
+# Licensing is mandatory for release builds: the private module is checked
+# out at the pinned commit and the configure FAILS if it is missing, so an
+# unlicensed build can never be packaged by accident. The URL is the
+# module's built-in production default (the configure refuses an override).
+"$REPO_ROOT/scripts/fetch_spa_licensing.sh"
 cmake -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DSPASTRIP_UNIVERSAL_BINARY=ON -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_BUILD_SNAPSHOTS=OFF
+      -DSPASTRIP_UNIVERSAL_BINARY=ON -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_BUILD_SNAPSHOTS=OFF \
+      -DSPASTRIP_REQUIRE_LICENSING=ON \
+      -DSPASTRIP_SPA_LICENSING_DIR="$REPO_ROOT/libs/spa-licensing" \
+      -DSPASTRIP_LICENSING_API_URL=
 cmake --build "$BUILD" --target SPAStrip_AU SPAStrip_VST3 SPAStripTests
 
 ART="$BUILD/SPAStrip_artefacts/Release"
