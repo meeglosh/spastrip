@@ -119,7 +119,7 @@ public:
         return text;
     }
 
-    static constexpr int width = 116, height = 18;
+    static constexpr int width = 144, height = 22;
 
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
@@ -131,7 +131,7 @@ public:
         g.setColour (ink.withAlpha (0.75f));
         g.drawRoundedRectangle (r, 3.0f, 1.0f);
         g.setColour (ink.brighter (0.25f));
-        g.setFont (metrics::smallFontBold());
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));   // readability floor (smallFontBold is 9.5)
         g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred, false);
     }
 

@@ -530,6 +530,9 @@ static void licenceBadgeLayoutAndAboutTest()
     const auto b=badge.getBounds();
     expect(b.getY()>=0 && b.getBottom()<=spa::ui::metrics::brandBandHeight,"badge inside the brand band");
     expect(b.getRight()<=spa::ui::metrics::baseWidth-8,"badge clear of the right edge");
+    for(const char* t:{"DEMO - ACTIVATE","TRIAL: 14 DAYS"})
+        expect(juce::GlyphArrangement::getStringWidth(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)),t)<=(float)b.getWidth()-10.0f,
+               juce::String("badge text fits at 12 px: ")+t);
     expect(b.getX()>spa::ui::metrics::baseWidth/2+200,"badge clear of the wordmark");
     for(auto* c:rig.content->getChildren())
         if(c!=&badge && c->isVisible() && c->getBounds().intersects(b))
