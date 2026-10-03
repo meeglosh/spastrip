@@ -19,6 +19,10 @@
 #include "params/Randomizer.h"
 #include "state/UndoHistory.h"
 
+#if SPASTRIP_HAS_SPA_LICENSING
+ #include <spa_licensing/spa_licensing.h>
+#endif
+
 namespace spa
 {
 
@@ -166,6 +170,24 @@ public:
     // Presets (see presets/PresetManager.h). The manager is owned here; these two
     // are what it needs from the processor.
     preset::PresetManager& getPresetManager() { return *presetManager; }
+
+    // Licensing. Without the spa-licensing module (main/CI builds) SPAStrip is
+    // always "licensed" and none of this exists. isDemoActive(): an atomic
+    // read, safe from any thread.
+#if SPASTRIP_HAS_SPA_LICENSING
+    bool isDemoActive() const noexcept { return licenceState != nullptr && licenceState->demoActive(); }
+    spa::lic::LicenseState& getLicenceState() { return *licenceState; }
+    spa::lic::LicenseController& getLicenceController() { return *licenceController; }
+    // Re-reads the token + trial stores (message thread only; file IO).
+    void refreshLicence();
+    // The editor was opened: the trial clock starts here (hosts construct
+    // plugins while scanning, which must not start it).
+    void noteEditorOpened();
+    // Fired on the message thread whenever the licence changed (header badge).
+    juce::ChangeBroadcaster& getLicenceBroadcaster() { return licenceBroadcaster; }
+#else
+    bool isDemoActive() const noexcept { return false; }
+#endif
     // The current state as a preset: parameters, FX order, mod slot targets and
     // IR source (an embedded user IR travels inside it). Excludes -- a preset
     // neither carries nor changes them -- the lock mask, WILD,
@@ -541,6 +563,15 @@ private:
     void watchdogCloseStaleUndoStep();
 
     std::unique_ptr<preset::PresetManager> presetManager;
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Declared after presetManager so they are destroyed FIRST (the preset
+    // manager's save gate reads licenceState through `this`, only on the
+    // message thread while both are alive). State before controller.
+    std::unique_ptr<spa::lic::LicenseState> licenceState;
+    std::unique_ptr<spa::lic::LicenseController> licenceController;
+    spa::lic::DemoGate demoGate;   // audio thread only after prepareToPlay
+    juce::ChangeBroadcaster licenceBroadcaster;
+#endif
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (SPAStripProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SPAStripProcessor)

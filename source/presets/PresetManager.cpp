@@ -813,6 +813,7 @@ PresetManager::SaveResult PresetManager::save (const juce::String& name, const j
                                                const juce::String& type, bool createFolder)
 {
     SaveResult r;
+    if (! checkSaveAllowed()) { r.error = saveBlockedMessage; return r; }
     const auto base = sanitiseFileName (name);
     if (base.isEmpty())
     {
@@ -881,6 +882,7 @@ PresetManager::SaveResult PresetManager::save (const juce::String& name, const j
 PresetManager::SaveResult PresetManager::saveInPlace (const juce::File& file)
 {
     SaveResult r;
+    if (! checkSaveAllowed()) { r.error = saveBlockedMessage; return r; }
     const auto* entry = findUser (file);
     if (entry == nullptr)
     {
@@ -1047,6 +1049,7 @@ bool PresetManager::setPresetType (const juce::File& file, const juce::String& t
 bool PresetManager::exportPreset (const PresetInfo& info, const juce::File& destFile, juce::String* error) const
 {
     const auto fail = [error] (const juce::String& why) { if (error != nullptr) *error = why; return false; };
+    if (! checkSaveAllowed()) return fail (saveBlockedMessage);
 
     if (destFile == juce::File() || ! destFile.getParentDirectory().createDirectory().wasOk())
         return fail ("The destination folder could not be created.");
@@ -1070,6 +1073,7 @@ bool PresetManager::exportPreset (const PresetInfo& info, const juce::File& dest
 bool PresetManager::exportFolder (const juce::String& rel, const juce::File& destZip, juce::String* error) const
 {
     const auto fail = [error] (const juce::String& why) { if (error != nullptr) *error = why; return false; };
+    if (! checkSaveAllowed()) return fail (saveBlockedMessage);
 
     juce::File folder;
     if (rel.isEmpty() || ! resolveFolder (rel, folder))

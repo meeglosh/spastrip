@@ -166,6 +166,24 @@ public:
     // The preset's name (and file name) is sanitiseFileName(name). A replaced
     // preset goes to the Trash first (the new file is fully written beforehand, so
     // a failed write never damages the old one).
+    // Licensing (demo mode): when set and returning true, save / saveInPlace /
+    // exportPreset / exportFolder refuse and call onSaveBlocked (the editor
+    // opens the licence panel). Loading, importing and host sessions are never
+    // affected. Message thread.
+    std::function<bool()> isSaveBlocked;
+    std::function<void()> onSaveBlocked;
+    // True if saving is allowed; otherwise fires onSaveBlocked and returns false.
+    bool checkSaveAllowed() const
+    {
+        if (isSaveBlocked && isSaveBlocked())
+        {
+            if (onSaveBlocked) onSaveBlocked();
+            return false;
+        }
+        return true;
+    }
+    static constexpr const char* saveBlockedMessage = "Saving presets is off in demo mode.";
+
     SaveResult save (const juce::String& name, const juce::String& folder, bool replace = false,
                      const juce::String& type = {}, bool createFolder = true);
     // True when User/<folder>/<sanitised name>.spastrip exists.

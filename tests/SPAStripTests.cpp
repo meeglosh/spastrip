@@ -1302,11 +1302,15 @@ namespace
 #include "PresetTests.inc"
 #include "FilterTests.inc"
 #include "BenchCpu.inc"
+#include "LicensingTests.inc"
 }
 
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+#if SPASTRIP_HAS_SPA_LICENSING
+    LicensingHermeticRun licensingRun;   // before any processor exists
+#endif
 
     // Diagnostics: `SPAStripTests --audit-mod [id-substring] [sampleRate] [envelopeHz] [square] [slewMs] [interval]` prints the
     // modulation-target zipper audit instead of running the suite.
@@ -1354,10 +1358,22 @@ int main (int argc, char** argv)
     const bool uiOnly = argc >= 2 && juce::String (argv[1]) == "--ui-only";
     // `SPAStripTests --filter-only` runs just the FILTER module tests.
     const bool filterOnly = argc >= 2 && juce::String (argv[1]) == "--filter-only";
+#if SPASTRIP_HAS_SPA_LICENSING
+    if (argc >= 3 && juce::String (argv[1]) == "--licence-renders")
+    {
+        licTests::renderLicenceUi (juce::File (argv[2]));
+        testPresetsRoot.deleteRecursively();
+        return 0;
+    }
+    // `SPAStripTests --licensing-only` runs just the licensing tests.
+    const bool licensingOnly = argc >= 2 && juce::String (argv[1]) == "--licensing-only";
+#else
+    const bool licensingOnly = false;
+#endif
 
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
-#define RUN(fn) do { if ((! uiOnly || juce::String (#fn).startsWith ("phase3Tests::") || juce::String (#fn).startsWith ("presetTests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
+#define RUN(fn) do { if ((! licensingOnly || juce::String (#fn).startsWith ("licTests::")) && (! uiOnly || juce::String (#fn).startsWith ("phase3Tests::") || juce::String (#fn).startsWith ("presetTests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
@@ -1485,6 +1501,16 @@ int main (int argc, char** argv)
     RUN (filterTests::stateRoundTripTest);
     RUN (filterTests::filterPanelUiTest);
     RUN (benchCpu::cpuCostRegressionTest);
+#if SPASTRIP_HAS_SPA_LICENSING
+    RUN (licTests::licenceTrialStartTest);
+    RUN (licTests::licenceTrialStatesTest);
+    RUN (licTests::licenceDemoGateTest);
+    RUN (licTests::licencePresetSaveBlockedTest);
+    RUN (licTests::licencePanelOnlineActivationTest);
+    RUN (licTests::licenceOfflineActivationTest);
+    RUN (licTests::licenceNoNetworkOnConstructionTest);
+    RUN (licTests::licenceBadgeLayoutAndAboutTest);
+#endif
 #undef RUN
     testPresetsRoot.deleteRecursively();
 

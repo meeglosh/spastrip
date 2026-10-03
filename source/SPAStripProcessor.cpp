@@ -267,6 +267,37 @@ SPAStripProcessor::SPAStripProcessor()
     // Constructed last: it captures the pristine state as the "Init" baseline.
     presetManager = std::make_unique<preset::PresetManager> (*this);
 
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Licence state: file reads only, on the constructing (message) thread.
+    // Never any network here -- requests only follow a click in the licence
+    // panel (LicenseController).
+    {
+        // The 14-day trial starts the first time the editor is really in a
+        // window (noteEditorOpened), never here: hosts construct processors
+        // while scanning. Until then: full functionality, no demo.
+        auto config = spa::lic::LicenseConfig::forProduct ("spastrip");
+        config.trialStart = spa::lic::LicenseConfig::TrialStart::onEditorOpen;
+        licenceState = std::make_unique<spa::lic::LicenseState> (std::move (config));
+    }
+    licenceState->refresh();
+    {
+        spa::lic::ProductInfo info;
+        info.productId = "spastrip";
+        info.productName = "SPAStrip";
+        info.serialPrefix = "STR";
+        info.appVersion = SPASTRIP_VERSION;
+        info.apiBaseUrl = SPA_LICENSING_API_BASE_URL;
+        info.buyUrl = "https://silverplatteraudio.com";       // placeholder until the store link is final
+        info.offlineUrl = juce::String (SPA_LICENSING_API_BASE_URL) + "/offline";
+        info.accountUrl = "https://silverplatteraudio.com";   // placeholder: SPAStation account page
+        licenceController = std::make_unique<spa::lic::LicenseController> (*licenceState, std::move (info));
+        licenceController->onLicenceChanged = [this] { licenceBroadcaster.sendChangeMessage(); };
+    }
+    // Demo mode blocks saving/exporting presets; loading presets and host
+    // session save/restore are never affected.
+    presetManager->isSaveBlocked = [this] { return isDemoActive(); };
+#endif
+
     // Message-thread housekeeping (oversampling rebuild, latency publish,
     // non-finite flush, IR reshape), same 150 ms cadence as SPASynth.
     startTimer (150);
@@ -310,6 +341,9 @@ void SPAStripProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     hostSampleRate = sampleRate;
     hostBlockSize = juce::jmax (1, samplesPerBlock);
+#if SPASTRIP_HAS_SPA_LICENSING
+    demoGate.prepare (sampleRate);   // host domain: applied to the final output
+#endif
 
     work.setSize (2, hostBlockSize, false, false, false);
     dryOut.setSize (2, hostBlockSize, false, false, false);
@@ -519,6 +553,16 @@ void SPAStripProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     const int total = buffer.getNumSamples();
     for (int pos = 0; pos < total; pos += hostBlockSize)
         processChunk (buffer, pos, juce::jmin (hostBlockSize, total - pos), false);
+
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Demo mode (trial over, no licence): ~1.5 s faded silence about every
+    // 60 s, the very last thing before the host gets the buffer (after every
+    // per-chunk safety stage). Not active -> returns immediately, output
+    // bit-identical. Host bypass (processBlockBypassed) is never gated: it is
+    // the dry signal anyway.
+    demoGate.process (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples(),
+                      licenceState->demoActive());
+#endif
 }
 
 void SPAStripProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -1515,3 +1559,19 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new spa::SPAStripProcessor();
 }
+
+#if SPASTRIP_HAS_SPA_LICENSING
+void spa::SPAStripProcessor::refreshLicence()
+{
+    licenceController->refresh();
+    licenceBroadcaster.sendChangeMessage();
+}
+
+void spa::SPAStripProcessor::noteEditorOpened()
+{
+    if (licenceState == nullptr)
+        return;
+    licenceState->noteEditorOpened();   // idempotent; writes the trial stores once
+    licenceBroadcaster.sendChangeMessage();
+}
+#endif

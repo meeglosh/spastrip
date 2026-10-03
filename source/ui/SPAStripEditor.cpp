@@ -249,6 +249,26 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     processor.getUndoBroadcaster().addChangeListener (this);
     processor.getPresetManager().addChangeListener (this);
 
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Licensing: brand-band badge, the logo menu's Licence..., and the
+    // save/export-blocked prompt. The trial clock starts in
+    // SPAStripEditor::parentHierarchyChanged (first real window).
+    processor.getLicenceBroadcaster().addChangeListener (this);
+    licenceBadge.onClick = [this] { showLicencePanel(); };
+    addChildComponent (licenceBadge);
+    refreshLicenceBadge();
+    logoButton.setTooltip ("SPAStrip menu: about, accent colour, licence");
+    processor.getPresetManager().onSaveBlocked = [safe = juce::Component::SafePointer<ContentComponent> (this)]
+    {
+        // Async: it fires from inside a menu / chooser / button callback.
+        juce::MessageManager::callAsync ([safe]
+        {
+            if (safe != nullptr)
+                safe->showLicencePanel ("Saving and exporting presets is off in demo mode. Activate to save your settings.");
+        });
+    };
+#endif
+
     {
         std::vector<juce::Component*> panels;
         for (int i = 0; i < fxTabs.getNumTabs(); ++i)
@@ -269,6 +289,10 @@ ContentComponent::~ContentComponent()
     fxTabs.getTabbedButtonBar().removeChangeListener (this);
     processor.getUndoBroadcaster().removeChangeListener (this);
     processor.getPresetManager().removeChangeListener (this);
+#if SPASTRIP_HAS_SPA_LICENSING
+    processor.getLicenceBroadcaster().removeChangeListener (this);
+    processor.getPresetManager().onSaveBlocked = nullptr;
+#endif
     tabDragStep.reset();
     if (animator != nullptr)
         animator->cancelAllAnimations (false);
@@ -298,6 +322,13 @@ void ContentComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         tabChanged();
         return;
     }
+#if SPASTRIP_HAS_SPA_LICENSING
+    if (source == &processor.getLicenceBroadcaster())
+    {
+        refreshLicenceBadge();
+        return;
+    }
+#endif
     if (source == &processor.getUndoBroadcaster())
         updateUndoButtons();
     refreshAll();
@@ -494,20 +525,61 @@ void ContentComponent::toggleModAssignment (const juce::String& paramID, int slo
 }
 
 //==============================================================================
-void ContentComponent::showLogoMenu()
+juce::PopupMenu ContentComponent::createLogoMenu()
 {
     juce::PopupMenu m;
     m.addItem (1, "About SPAStrip...");
     m.addItem (2, "Accent colour...");
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&logoButton),
+#if SPASTRIP_HAS_SPA_LICENSING
+    m.addItem (3, "Licence...");
+#endif
+    return m;
+}
+
+void ContentComponent::showLogoMenu()
+{
+    createLogoMenu().showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&logoButton),
                      [safe = juce::Component::SafePointer<ContentComponent> (this)] (int r)
                      {
                          if (safe == nullptr)
                              return;
                          if (r == 1) safe->showAboutPanel();
                          else if (r == 2) safe->showAccentPicker();
+#if SPASTRIP_HAS_SPA_LICENSING
+                         else if (r == 3) safe->showLicencePanel();
+#endif
                      });
 }
+
+#if SPASTRIP_HAS_SPA_LICENSING
+void ContentComponent::refreshLicenceBadge() { licenceBadge.update (processor.getLicenceState()); }
+
+juce::String ContentComponent::licenceStateLine()
+{
+    auto& st = processor.getLicenceState();
+    const int d = st.trialDaysLeft();
+    return st.isLicensed() ? juce::String ("Licence: activated on this computer")
+         : st.demoActive() ? juce::String ("Licence: demo mode (trial ended)")
+         : ! st.trialStarted() ? juce::String ("Licence: trial not started")
+                           : "Licence: trial, " + juce::String (d) + (d == 1 ? " day left" : " days left");
+}
+
+void ContentComponent::showLicencePanel (const juce::String& banner)
+{
+    if (auto* existing = getLicenceDialogForTest())
+    {
+        existing->setBanner (banner);
+        return;
+    }
+    showDialog (std::make_unique<LicenceDialog> (processor.getLicenceController(), banner));
+    if (auto* d = getLicenceDialogForTest())
+    {
+        auto& serial = d->getPanel().getSerialEditor();
+        if (serial.isShowing())
+            serial.grabKeyboardFocus();
+    }
+}
+#endif
 
 // SAVE: a loaded user preset whose file still exists offers "Save" (rewrite it in
 // place, keeping its name, folder and type) next to "Save As..."; anything else (Init,
@@ -515,6 +587,8 @@ void ContentComponent::showLogoMenu()
 void ContentComponent::onSaveClicked()
 {
     auto& pm = processor.getPresetManager();
+    if (! pm.checkSaveAllowed())   // demo mode: the licence panel opens instead (onSaveBlocked)
+        return;
     const auto file = pm.getCurrentFile();
     if (! file.existsAsFile())
     {
@@ -657,7 +731,14 @@ void ContentComponent::showRenameDialog (const juce::File& file)
                 });
 }
 
-void ContentComponent::showAboutPanel() { showDialog (std::make_unique<AboutDialog> (processor)); }
+void ContentComponent::showAboutPanel()
+{
+    auto about = std::make_unique<AboutDialog> (processor);
+#if SPASTRIP_HAS_SPA_LICENSING
+    about->setLicenceLine (licenceStateLine());
+#endif
+    showDialog (std::move (about));
+}
 
 void ContentComponent::showAccentPicker()
 {
@@ -889,6 +970,14 @@ void ContentComponent::resized()
     auto header = bounds.removeFromTop (metrics::headerHeight);
     auto footer = bounds.removeFromBottom (metrics::footerHeight);
 
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Licence chip: right end of the brand band (which holds only the centred
+    // wordmark), vertically centred -- nothing existing moves.
+    licenceBadge.setBounds (getWidth() - 12 - LicenceBadge::width,
+                            (metrics::brandBandHeight - LicenceBadge::height) / 2,
+                            LicenceBadge::width, LicenceBadge::height);
+#endif
+
     // --- Header -------------------------------------------------------------
     logoButton.setBounds (header.removeFromLeft (52));
 
@@ -1068,6 +1157,15 @@ void SPAStripEditor::resized()
 
 void SPAStripEditor::parentHierarchyChanged()
 {
+#if SPASTRIP_HAS_SPA_LICENSING
+    // Trial start = the first time this editor is actually in a window (has a
+    // peer), not construction: some hosts build editors they never show.
+    if (! trialStartNoted && getPeer() != nullptr)
+    {
+        trialStartNoted = true;
+        stripProcessor.noteEditorOpened();
+    }
+#endif
     // One-shot re-check once there is a real peer: the host may have created the editor
     // before it was on screen, so the constructor's fit could have used the wrong display.
     if (! screenFitCheckDone && getPeer() != nullptr && isShowing())
@@ -1115,3 +1213,4 @@ void SPAStripEditor::parentHierarchyChanged()
 }
 
 } // namespace spa
+

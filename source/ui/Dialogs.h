@@ -47,10 +47,15 @@ public:
     juce::String getCreditsTextForTest() const { return credits.getText(); }
     juce::String getInfoTextForTest() const { return info.getText(); }
     juce::String buildClipboardText() const;
+    // Licence state line ("Licence: activated..." / trial / demo), set by the
+    // editor on licensing builds; adds one row to the info block.
+    void setLicenceLine (const juce::String&);
+    juce::String getLicenceLine() const { return licenceLine; }
 
 private:
     void layoutCard (juce::Rectangle<int>) override;
     juce::String formatString() const;
+    juce::String licenceLine;
 
     juce::AudioProcessor& processor;
     juce::Rectangle<int> wordmarkArea;

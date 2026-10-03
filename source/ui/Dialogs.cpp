@@ -136,6 +136,21 @@ AboutDialog::AboutDialog (juce::AudioProcessor& p) : DialogOverlay ({ 520, 500 }
     addAndMakeVisible (closeButton);
 }
 
+void AboutDialog::setLicenceLine (const juce::String& line)
+{
+    if (line == licenceLine)
+        return;
+    const bool grew = licenceLine.isEmpty() && line.isNotEmpty();
+    const bool shrank = licenceLine.isNotEmpty() && line.isEmpty();
+    licenceLine = line;
+    auto text = info.getText().upToFirstOccurrenceOf ("\nLicence", false, false);
+    if (line.isNotEmpty())
+        text += "\n" + line;
+    info.setText (text, juce::dontSendNotification);
+    setCardSize ({ getCardSize().x, getCardSize().y + (grew ? 16 : shrank ? -16 : 0) });
+    resized();
+}
+
 juce::String AboutDialog::formatString() const
 {
     if (processor.wrapperType == juce::AudioProcessor::wrapperType_AudioUnit)  return "AU";
@@ -151,6 +166,8 @@ juce::String AboutDialog::buildClipboardText() const
     lines.add ("Commit: " SPASTRIP_GIT_COMMIT);
     lines.add ("Build date: " SPASTRIP_BUILD_DATE);
     lines.add ("Format: " + formatString());
+    if (licenceLine.isNotEmpty())
+        lines.add (licenceLine);
     lines.add ("OS: " + juce::SystemStats::getOperatingSystemName());
     lines.add ("Sample rate: " + juce::String (processor.getSampleRate(), 0) + " Hz");
     lines.add ("Block size: " + juce::String (processor.getBlockSize()));
@@ -172,7 +189,7 @@ void AboutDialog::layoutCard (juce::Rectangle<int> card)
     wordmarkArea = r.removeFromTop (30);
     byline.setBounds (r.removeFromTop (16));
     r.removeFromTop (6);
-    info.setBounds (r.removeFromTop (50));
+    info.setBounds (r.removeFromTop (licenceLine.isNotEmpty() ? 66 : 50));
     link.setBounds (r.removeFromTop (20));
     r.removeFromTop (10);
     creditsHeading.setBounds (r.removeFromTop (16));
