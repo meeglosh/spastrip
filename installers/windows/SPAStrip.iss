@@ -72,3 +72,8 @@ Source: "{#DocsDir}\CREDITS.txt"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\SPAStrip README"; Filename: "{app}\README.txt"
 Name: "{group}\SPAStrip Credits"; Filename: "{app}\CREDITS.txt"
+
+[Messages]
+; Finished page: one newsletter line (plain text; the URL is shown, not clickable).
+FinishedLabel=Setup has finished installing [name] on your computer.%n%nStay in the loop: get the Silverplatter Audio newsletter at silverplatteraudio.com/pages/newsletter
+FinishedLabelNoIcons=Setup has finished installing [name] on your computer.%n%nStay in the loop: get the Silverplatter Audio newsletter at silverplatteraudio.com/pages/newsletter

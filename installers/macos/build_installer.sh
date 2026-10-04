@@ -120,12 +120,23 @@ Use Customize to choose formats.</p>
 </body></html>
 HTML
 
+# Conclusion page: newsletter line.
+cat > "$WORK/resources/conclusion.html" <<'HTML'
+<html><head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system;">
+<h2>SPAStrip is installed</h2>
+<p>Quit and reopen your DAW to pick it up.</p>
+<p>Stay in the loop: get the Silverplatter Audio newsletter at <a href="https://silverplatteraudio.com/pages/newsletter">silverplatteraudio.com/pages/newsletter</a></p>
+</body></html>
+HTML
+
 cat > "$WORK/distribution.xml" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
     <title>SPAStrip $VERSION</title>
     <welcome file="welcome.html"/>
     <license file="License.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
     <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
     <volume-check>
         <allowed-os-versions><os-version min="11.0"/></allowed-os-versions>
