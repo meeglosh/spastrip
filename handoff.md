@@ -136,3 +136,7 @@ export SPASYNTH_NOTARIZE_PROFILE="SPASYNTH_NOTARY"   # fallback; ~/.config/spasy
   (a `filter-repo` reset wiped uncommitted UI edits once).
 - Release order of the folder: EULA.txt, README.txt, QUICKSTART.txt, pkg, exe. No Library
   folder (owner's decision).
+
+## Launch checklist additions
+
+- Newsletter page: when this product is announced, add it to an "Our tools" list on silverplatteraudio.com/pages/newsletter (Shopify → Online Store → Pages → "Silverplatter Audio newsletter"; the list was removed 2026-10-04 so the page didn't preview unreleased products, so recreate the heading if it's the first). Approved one-liner — SPAStrip: The Silverplatter Audio effects chain, in a single plugin.
