@@ -138,6 +138,23 @@ cat > "$WORK/distribution.xml" <<XML
     <license file="License.txt"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <installation-check script="hostsClosed()"/>
+    <script><![CDATA[
+    // A DAW that is open while the plug-in is replaced keeps (and re-caches) the
+    // old component and the plug-in disappears from it until a manual rescan.
+    function hostsClosed() {
+        var hosts = [['com.apple.logic10', 'Logic Pro'], ['com.apple.mainstage3', 'MainStage'], ['com.apple.garageband10', 'GarageBand']];
+        for (var i = 0; i < hosts.length; ++i) {
+            if (system.applications.fromIdentifier(hosts[i][0])) {
+                my.result.type = 'Fatal';
+                my.result.title = 'Please quit ' + hosts[i][1];
+                my.result.message = 'Quit ' + hosts[i][1] + ' before installing, then run this installer again.';
+                return false;
+            }
+        }
+        return true;
+    }
+    ]]></script>
     <volume-check>
         <allowed-os-versions><os-version min="11.0"/></allowed-os-versions>
     </volume-check>
