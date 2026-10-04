@@ -535,6 +535,7 @@ juce::PopupMenu ContentComponent::createLogoMenu()
 #if SPASTRIP_HAS_SPA_LICENSING
     m.addItem (3, "Licence...");
 #endif
+    m.addItem (4, "Join the Newsletter...");
     return m;
 }
 
@@ -550,6 +551,8 @@ void ContentComponent::showLogoMenu()
 #if SPASTRIP_HAS_SPA_LICENSING
                          else if (r == 3) safe->showLicencePanel();
 #endif
+                         else if (r == 4)
+                             juce::URL ("https://silverplatteraudio.com/pages/newsletter").launchInDefaultBrowser();
                      });
 }
 
