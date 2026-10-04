@@ -12,7 +12,7 @@ Version @VERSION@
 2. THE CHAIN
    The tabs along the top of the window are the effects, in the order the
    audio flows through them (left to right): FILTER, DIST, CHORUS, MOD,
-   TREM/VIB, GRAIN, DELAY, REVERB, CONV, EQ, COMP, LIMIT. Drag a tab to
+   TREM/VIB, GLITTER, DELAY, REVERB, CONV, EQ, COMP, LIMIT. Drag a tab to
    a new position to reorder the chain; a drag is a single undo step.
 
 3. FILTERS

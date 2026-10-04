@@ -48,7 +48,7 @@ namespace
     }
 
     const char* const kTabNames[dsp::FXChain::numModules] = { "DIST", "CHORUS", "DELAY", "REVERB", "EQ",
-                                                              "MOD", "TREM/VIB", "LIMIT", "CONV", "COMP", "GRAIN",
+                                                              "MOD", "TREM/VIB", "LIMIT", "CONV", "COMP", "GLITTER",
                                                               "FILTER" };
 }
 
@@ -182,7 +182,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     convolvePanel = new ConvolvePanel (processor);
     fxTabs.addTab ("CONV", tabBg, convolvePanel, true);
     fxTabs.addTab ("COMP", tabBg, new CompPanel (apvts, tel), true);
-    fxTabs.addTab ("GRAIN", tabBg, new FXPanel (apvts, FXDisplay::Kind::grain, params::Section::fxGrain, "Grain",
+    fxTabs.addTab ("GLITTER", tabBg, new FXPanel (apvts, FXDisplay::Kind::grain, params::Section::fxGrain, "Glitter",
                                                 juce::StringArray { fx::grainEnable }, &tel), true);
     fxTabs.addTab ("FILTER", tabBg, new FilterPanel (apvts, [this] { return processor.getSampleRate(); }), true);
     addAndMakeVisible (fxTabs);
@@ -207,7 +207,9 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     fxTabs.onLockClicked = [this] (const juce::String& n) { setLockedFromTab (n); };
 
     {
-        const auto saved = apvts.state.getProperty (kStateFxTab, "EQ").toString();
+        auto saved = apvts.state.getProperty (kStateFxTab, "EQ").toString();
+        if (saved == "GRAIN")
+            saved = "GLITTER"; // renamed in 1.0.31
         const int idx = fxTabs.getTabNames().indexOf (saved);
         fxTabs.setCurrentTabIndex (idx >= 0 ? idx : fxTabs.getTabNames().indexOf ("EQ"));
     }
@@ -219,7 +221,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
             { "EQ",       { fx::eqEnable } },     { "MOD",    { fx::modEnable } },
             { "TREM/VIB", { fx::tremEnable, fx::vibEnable } },
             { "LIMIT",    { fx::limEnable } },    { "CONV",   { fx::convEnable } },
-            { "COMP",     { fx::compEnable } },   { "GRAIN",  { fx::grainEnable } },
+            { "COMP",     { fx::compEnable } },   { "GLITTER", { fx::grainEnable } },
             { "FILTER",   { fx::filterEnable, fx::filter2Enable } } },
         fxTabs);
     fxTabs.isTabEngaged = [this] (const juce::String& n) { return tabEngagement != nullptr && tabEngagement->isEngaged (n); };

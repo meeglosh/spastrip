@@ -40,7 +40,7 @@ juce::String moduleName (Module m)
         case Module::limiter:    return "LIMITER";
         case Module::convolve:   return "CONVOLVE";
         case Module::comp:       return "COMP";
-        case Module::grain:      return "GRAIN";
+        case Module::grain:      return "GLITTER";
         case Module::filter:     return "FILTER";
     }
     return {};

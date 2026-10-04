@@ -133,9 +133,9 @@ namespace phase3Tests
             p2->setRandomWildness (0.9f);
             setParam (*p2, fx::chorusEnable, 1.0f);
             auto ed = openEditor (*p2);
-            expect (orderNames (*ed) == "GRAIN,COMP,CONV,LIMIT,TREM/VIB,MOD,EQ,REVERB,DELAY,CHORUS,DIST,FILTER",
+            expect (orderNames (*ed) == "GLITTER,COMP,CONV,LIMIT,TREM/VIB,MOD,EQ,REVERB,DELAY,CHORUS,DIST,FILTER",
                     "a chain order set while closed is what the opened editor shows: " + orderNames (*ed));
-            expect (ed->getContent().getFxTabs().isTabLocked ("GRAIN") && ! ed->getContent().getFxTabs().isTabLocked ("DIST"),
+            expect (ed->getContent().getFxTabs().isTabLocked ("GLITTER") && ! ed->getContent().getFxTabs().isTabLocked ("DIST"),
                     "a lock set while closed shows on the opened editor");
             expect (std::abs (ed->getContent().getWildSlider().getValue() - 0.9) < 1e-6, "WILD set while closed shows on the opened editor");
             expect (ed->getContent().getFxTabs().isTabEngaged ("CHORUS") && ! ed->getContent().getFxTabs().isTabEngaged ("DIST"),
@@ -181,7 +181,7 @@ namespace phase3Tests
         proc->getPresetManager().save ("Order A", {}, true);
         proc->setFxOrder ({ 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 11 });
         content.tickForTest();
-        expect (orderNames (*ed).startsWith ("GRAIN,COMP"), "manual setFxOrder shows");
+        expect (orderNames (*ed).startsWith ("GLITTER,COMP"), "manual setFxOrder shows");
         proc->getPresetManager().loadPreset (0);
         content.tickForTest();
         expect (uiOrder (*ed) == proc->getFxOrder() && uiOrder (*ed)[0] == 3, "after a preset load the tabs follow the preset's order");
@@ -630,7 +630,7 @@ namespace phase3Tests
             auto ed = openEditor (*proc);
             ed->getContent().selectTabForModule ((int) Module::grain);
             pump (50);
-            expect (state.getProperty ("uiFxTab").toString() == "GRAIN", "uiFxTab remembers the selected effect by name");
+            expect (state.getProperty ("uiFxTab").toString() == "GLITTER", "uiFxTab remembers the selected effect by name");
             ed->setSize (juce::roundToInt (ui::metrics::baseWidth * 1.5), juce::roundToInt (ui::metrics::baseHeight * 1.5));
             expect (std::abs ((double) state.getProperty ("uiScale") - 1.5) < 0.01, "uiScale is written when the window is resized (" + state.getProperty ("uiScale").toString() + ")");
             expect (std::abs (ed->getScale() - 1.5f) < 0.01f, "the content is scaled by the window size");
@@ -654,7 +654,7 @@ namespace phase3Tests
             proc->getStateInformation (blob);
             auto other = makeProc (48000.0, 256);
             other->setStateInformation (blob.getData(), (int) blob.getSize());
-            expect (other->getAPVTS().state.getProperty ("uiFxTab").toString() == "GRAIN" && other->getAPVTS().state.hasProperty ("uiScale"),
+            expect (other->getAPVTS().state.getProperty ("uiFxTab").toString() == "GLITTER" && other->getAPVTS().state.hasProperty ("uiScale"),
                     "uiFxTab / uiScale are in the host state");
         }
 

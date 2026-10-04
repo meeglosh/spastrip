@@ -37,7 +37,7 @@ namespace
     // fixed, principled set of words dense mode is allowed to try
     // stripping; it is NOT a per-caption override table (that's the
     // collision check in stripFxSectionPrefixIfUnambiguous below).
-    const char* const fxSectionPrefixes[] = { "Dist", "Chorus", "Delay", "Reverb", "Mod", "Trem", "Vib", "Grain" };
+    const char* const fxSectionPrefixes[] = { "Dist", "Chorus", "Delay", "Reverb", "Mod", "Trem", "Vib", "Glitter" };
 
     juce::String stripFxSectionPrefix (const juce::String& caption)
     {

@@ -18,7 +18,7 @@ juce::String sectionName (Section s)
         case Section::fxLimiter: return "FX Limiter";
         case Section::fxConvolve: return "FX Convolve";
         case Section::fxComp:   return "FX Comp";
-        case Section::fxGrain:  return "FX Grain";
+        case Section::fxGrain:  return "FX Glitter";
         case Section::sidechain: return "Sidechain";
         case Section::modMatrix: return "Mod Matrix";
         case Section::fxFilter:  return "FX Filter";
@@ -451,21 +451,21 @@ static std::vector<ParamDef> buildDefs()
     // limited spread / reverse / feedback, mix capped at half. FREEZE, SYNC and
     // the division are never rolled (a frozen or tempo-locked cloud from a dice
     // roll reads as a fault, not a choice).
-    p.push_back ({ fx::grainEnable, "Grain On", Section::fxGrain,
+    p.push_back ({ fx::grainEnable, "Glitter On", Section::fxGrain,
                    ParamKind::boolParam, {}, 0.0f, "",
                    { .enabled = true, .biasCentre = 0.2f, .biasStrength = 0.5f } });
-    p.push_back ({ fx::grainSize, "Grain Size", Section::fxGrain,
+    p.push_back ({ fx::grainSize, "Glitter Size", Section::fxGrain,
                    ParamKind::floatParam, skewedRange (5.0f, 500.0f, 120.0f), 120.0f, "ms",
                    { .enabled = true, .minNorm = 0.25f, .maxNorm = 0.75f } });
-    p.push_back ({ fx::grainDensity, "Grain Density", Section::fxGrain,
+    p.push_back ({ fx::grainDensity, "Glitter Density", Section::fxGrain,
                    ParamKind::floatParam, skewedRange (1.0f, 400.0f, 28.0f), 14.0f, "/s",
                    { .enabled = true, .minNorm = 0.25f, .maxNorm = 0.57f } });   // rolls stay <= ~45/s
-    p.push_back ({ fx::grainSync, "Grain Sync", Section::fxGrain,
+    p.push_back ({ fx::grainSync, "Glitter Sync", Section::fxGrain,
                    ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
-    p.push_back ({ fx::grainDivision, "Grain Div", Section::fxGrain,
+    p.push_back ({ fx::grainDivision, "Glitter Div", Section::fxGrain,
                    ParamKind::choiceParam, {}, 9.0f /* 1/8 */, "",
                    { .enabled = false }, lfoDivisionNames() });
-    p.push_back ({ fx::grainPitch, "Grain Pitch", Section::fxGrain,
+    p.push_back ({ fx::grainPitch, "Glitter Pitch", Section::fxGrain,
                    ParamKind::floatParam, { -24.0f, 24.0f, 0.01f }, 0.0f, "st",
                    { .enabled = true, .minNorm = 0.25f, .maxNorm = 0.75f,
                             .biasCentre = 0.5f, .biasStrength = 0.4f } });
@@ -473,27 +473,27 @@ static std::vector<ParamDef> buildDefs()
     // interval and stereo scatter). SPREAD PITCH (1.0.30) took over the pitch
     // jitter the old SPREAD also did: it was +/-12 st x SPREAD, so a 1.0.29
     // value s migrates to spreadPitch = 12 s semitones (restoreStateTree).
-    p.push_back ({ fx::grainSpread, "Grain Spread Time", Section::fxGrain,
+    p.push_back ({ fx::grainSpread, "Glitter Spread Time", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 1.0f }, 0.25f, "",
                    { .enabled = true, .maxNorm = 0.6f }, {}, true });
-    p.push_back ({ fx::grainSpreadPitch, "Grain Spread Pitch", Section::fxGrain,
+    p.push_back ({ fx::grainSpreadPitch, "Glitter Spread Pitch", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 12.0f, 0.01f }, 3.0f, "st",
                    { .enabled = true, .maxNorm = 0.5f } });   // rolls stay <= 6 st
-    p.push_back ({ fx::grainPosition, "Grain Position", Section::fxGrain,
+    p.push_back ({ fx::grainPosition, "Glitter Position", Section::fxGrain,
                    ParamKind::floatParam, skewedRange (0.0f, 4000.0f, 600.0f), 300.0f, "ms",
                    { .enabled = true, .maxNorm = 0.6f } });
-    p.push_back ({ fx::grainReverse, "Grain Reverse", Section::fxGrain,
+    p.push_back ({ fx::grainReverse, "Glitter Reverse", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 1.0f }, 0.0f, "",
                    { .enabled = true, .maxNorm = 0.5f, .biasCentre = 0.0f,
                             .biasStrength = 0.3f }, {}, true });
-    p.push_back ({ fx::grainFeedback, "Grain Feedback", Section::fxGrain,
+    p.push_back ({ fx::grainFeedback, "Glitter Feedback", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 0.9f }, 0.0f, "",
                    { .enabled = true, .maxNorm = 0.5f, .biasCentre = 0.1f,
                             .biasStrength = 0.4f }, {}, true });
-    p.push_back ({ fx::grainMix, "Grain Mix", Section::fxGrain,
+    p.push_back ({ fx::grainMix, "Glitter Mix", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 1.0f }, 0.35f, "",
                    { .enabled = true, .minNorm = 0.15f, .maxNorm = 0.5f }, {}, true });
-    p.push_back ({ fx::grainFreeze, "Grain Freeze", Section::fxGrain,
+    p.push_back ({ fx::grainFreeze, "Glitter Freeze", Section::fxGrain,
                    ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
 
     // FX FILTER (SPAStrip): two filters ported from SPASynth's filter section
