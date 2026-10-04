@@ -24,6 +24,7 @@ jobs:
     runs-on: windows-2022
     permissions:
       contents: write
+      id-token: write # Azure OIDC login for code signing (inert while signing is dormant)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,6 +69,55 @@ jobs:
         shell: bash
         run: ./build/SPAStripTests_artefacts/Release/SPAStripTests.exe
 
+      # ---- Windows code signing (Azure Artifact Signing) -- DORMANT until the
+      # three AZURE_* secrets exist. Without them every step below that
+      # mentions steps.sign.outputs.enabled is skipped and the build is
+      # exactly the unsigned build it always was. Only main-branch runs sign
+      # (pull requests and other branches stay unsigned, so the Azure
+      # federated credential only needs the refs/heads/main subject).
+      # Setup guide: docs/windows-signing.md in the spasynth repo.
+      - name: Signing configuration
+        id: sign
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ELIGIBLE: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+        run: |
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_SUBSCRIPTION_ID" ] && [ "$ELIGIBLE" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Windows code signing: ON"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Windows code signing is OFF (Azure secrets not set, or not a main-branch run). Building unsigned."
+          fi
+
+      - name: Azure login (OIDC)
+        if: steps.sign.outputs.enabled == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Artifact Signing tools
+        if: steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          SIGN_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT || 'https://eus.codesigning.azure.net/' }}
+          SIGN_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT || 'silverplatter-signing' }}
+          SIGN_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE || 'silverplatter-public' }}
+        run: ./scripts/windows-signing.ps1 -Action Setup
+
+      - name: Sign plugin binaries
+        if: steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $v = 'build/SPAStrip_artefacts/Release/VST3/SPAStrip.vst3/Contents/x86_64-win/SPAStrip.vst3'
+          ./scripts/windows-signing.ps1 -Action Sign -Files $v
+          ./scripts/windows-signing.ps1 -Action Verify -Files $v
+
       - name: Read version
         id: version
         shell: bash
@@ -86,11 +136,24 @@ jobs:
         run: ./scripts/prepare_docs.sh build/docs "${{ steps.version.outputs.version }}"
 
       - name: Build installer (Windows)
+        if: steps.sign.outputs.enabled != 'true'
         shell: cmd
         # /O (output dir) is resolved relative to the working directory (repo
         # root), NOT the .iss location like the Source paths, so use an
         # absolute workspace path or the publish step finds nothing.
         run: '"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.version.outputs.version }} /DArtefacts=..\..\build\SPAStrip_artefacts\Release /DDocsDir=..\..\build\docs /O"%GITHUB_WORKSPACE%\dist\installers" installers\windows\SPAStrip.iss'
+
+      # Signed variant: same command plus an Inno SignTool definition so ISCC
+      # signs the installer and the uninstaller. The VST3 was signed above.
+      - name: Build installer (Windows, signed)
+        if: steps.sign.outputs.enabled == 'true'
+        shell: cmd
+        run: '"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.version.outputs.version }} /DArtefacts=..\..\build\SPAStrip_artefacts\Release /DDocsDir=..\..\build\docs /DSignToolCmd=spasign "/Sspasign=%SPA_ISCC_SIGN_CMD%" /O"%GITHUB_WORKSPACE%\dist\installers" installers\windows\SPAStrip.iss'
+
+      - name: Verify signed installer
+        if: steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        run: ./scripts/windows-signing.ps1 -Action Verify -Files "dist/installers/*.exe"
 
       - name: Check installer name
         shell: bash

@@ -7,15 +7,15 @@
 ; where build\docs is filled by scripts\prepare_docs.sh (README/QUICKSTART with the
 ; version substituted, EULA, and CREDITS.txt generated from assets/irs/CREDITS.md).
 ;
-; Code signing is opt-in (Windows is unsigned for now). Inno Setup only accepts a
-; NAME in the SignTool directive; the command behind that name is defined on the
-; ISCC command line with /S. So to sign, pass both:
-;   ISCC /DSignToolCmd=spastripsign ^
-;        "/Sspastripsign=signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a $f" ...
+; Code signing is opt-in (CI: Azure Artifact Signing, see
+; scripts/windows-signing.ps1; setup guide in the spasynth repo,
+; docs/windows-signing.md). Inno Setup only accepts a NAME in the SignTool
+; directive; the command behind that name is defined on the ISCC command line
+; with /S. So to sign, pass both:
+;   ISCC /DSignToolCmd=spasign "/Sspasign=<signtool sign ... $f>" ...
 ; ($f is replaced by Inno with the file to sign.) Inno then signs Setup.exe and
-; the uninstaller. This differs from SPASynth's script, which put the whole
-; command in /DSignToolCmd; as far as we can tell that is not valid Inno syntax,
-; and it was never exercised there. UNVERIFIED until a certificate exists.
+; the uninstaller (SignedUninstaller=yes). The VST3 is signed by CI before
+; compiling. Without /DSignToolCmd this compiles unsigned as before.
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
