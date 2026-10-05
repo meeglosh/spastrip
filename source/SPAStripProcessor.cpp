@@ -138,6 +138,12 @@ SPAStripProcessor::SPAStripProcessor()
     bind (r.chorusWidth, fx::chorusWidth);
     r.chorusMode = rp (fx::chorusMode);
     bind (r.chorusMix, fx::chorusMix);
+    r.chorusVhsWow      = rp (fx::chorusVhsWow);
+    r.chorusVhsFlutter  = rp (fx::chorusVhsFlutter);
+    r.chorusVhsTone     = rp (fx::chorusVhsTone);
+    r.chorusVhsSat      = rp (fx::chorusVhsSat);
+    r.chorusVhsHiss     = rp (fx::chorusVhsHiss);
+    r.chorusVhsDropouts = rp (fx::chorusVhsDropouts);
 
     r.delayEnable = rp (fx::delayEnable);
     r.delaySync = rp (fx::delaySync);
@@ -1043,6 +1049,12 @@ void SPAStripProcessor::updateFXParams()
     p.chorusWidth    = rf.chorusWidth.get() * 0.01f;
     p.chorusMode     = (int) rf.chorusMode->load();
     p.chorusMix      = rf.chorusMix.get();
+    p.chorusVhsWow      = rf.chorusVhsWow->load() * 0.01f;      // registry %, DSP 0..1
+    p.chorusVhsFlutter  = rf.chorusVhsFlutter->load() * 0.01f;
+    p.chorusVhsTone     = rf.chorusVhsTone->load() * 0.01f;
+    p.chorusVhsSat      = rf.chorusVhsSat->load() * 0.01f;
+    p.chorusVhsHiss     = rf.chorusVhsHiss->load() * 0.01f;
+    p.chorusVhsDropouts = rf.chorusVhsDropouts->load() * 0.01f;
     p.delayEnable    = rf.delayEnable->load() >= 0.5f;
     p.delaySync      = rf.delaySync->load() >= 0.5f;
     p.delayTimeMs    = rf.delayTime.get();

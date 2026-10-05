@@ -137,8 +137,15 @@ namespace id
         inline constexpr const char* chorusDepth    = "fxChorus.depth";
         inline constexpr const char* chorusFeedback = "fxChorus.feedback";
         inline constexpr const char* chorusWidth    = "fxChorus.width";
-        inline constexpr const char* chorusMode     = "fxChorus.mode";   // Vintage/Modern
+        inline constexpr const char* chorusMode     = "fxChorus.mode";   // Vintage/Modern/VHS
         inline constexpr const char* chorusMix      = "fxChorus.mix";
+        // VHS mode only (SPASynth 1.0.32), percentages.
+        inline constexpr const char* chorusVhsWow      = "fxChorus.vhsWow";
+        inline constexpr const char* chorusVhsFlutter  = "fxChorus.vhsFlutter";
+        inline constexpr const char* chorusVhsTone     = "fxChorus.vhsTone";
+        inline constexpr const char* chorusVhsSat      = "fxChorus.vhsSat";
+        inline constexpr const char* chorusVhsHiss     = "fxChorus.vhsHiss";
+        inline constexpr const char* chorusVhsDropouts = "fxChorus.vhsDropouts";
 
         inline constexpr const char* delayEnable   = "fxDelay.enable";
         inline constexpr const char* delaySync     = "fxDelay.sync";

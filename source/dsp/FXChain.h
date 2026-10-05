@@ -124,12 +124,15 @@ public:
         float distMix = 1.0f;
 
         bool chorusEnable = false;
-        int chorusMode = 1;         // 0 Vintage (Juno-ish) 1 Modern (clean)
+        int chorusMode = 1;         // 0 Vintage (Juno-ish) 1 Modern (clean) 2 VHS
         float chorusRate = 0.8f;
         float chorusDepth = 0.3f;
         float chorusFeedback = 0.0f;
         float chorusWidth = 0.5f;   // 0..1 L/R LFO phase offset (see StereoChorus)
         float chorusMix = 0.5f;
+        // VHS mode (0..1; see StereoChorus::Params)
+        float chorusVhsWow = 0.4f, chorusVhsFlutter = 0.25f, chorusVhsTone = 0.45f,
+              chorusVhsSat = 0.3f, chorusVhsHiss = 0.15f, chorusVhsDropouts = 0.1f;
 
         bool delayEnable = false;
         bool delaySync = true;

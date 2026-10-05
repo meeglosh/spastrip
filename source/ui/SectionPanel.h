@@ -45,6 +45,10 @@ public:
     // dimming after the auto-built grid is constructed. Empty if not found.
     std::vector<juce::Component*> findControlComponents (const juce::String& paramID) const;
 
+    // Hides/shows a control and its caption; dense mode packs only the
+    // visible ones (the caller re-runs its own layout afterwards).
+    void setControlVisible (const juce::String& paramID, bool shouldBeVisible);
+
 private:
     struct Control
     {

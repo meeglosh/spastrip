@@ -179,10 +179,11 @@ static void chorusWidthModeParamsTest()
     expect (mode != nullptr, "fxChorus.mode is in the registry");
     if (mode != nullptr)
     {
-        expect (mode->choices.size() == 2, "chorus mode has exactly 2 choices (got "
+        expect (mode->choices.size() == 3, "chorus mode has exactly 3 choices (got "
                 + juce::String (mode->choices.size()) + ")");
         expect (mode->choices[0] == "Vintage", "chorus mode index 0 is Vintage (append-only)");
         expect (mode->choices[1] == "Modern", "chorus mode index 1 is Modern (append-only)");
+        expect (mode->choices[2] == "VHS", "chorus mode index 2 is VHS (appended, SPASynth 1.0.32)");
         expect (std::abs (mode->defaultValue - 1.0f) < 0.001f,
                 "chorus mode defaults to Modern, closest to the engine it replaced");
         expect (mode->random.enabled, "chorus mode is randomizable");

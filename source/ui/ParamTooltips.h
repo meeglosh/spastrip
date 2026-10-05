@@ -42,7 +42,7 @@ inline juce::String tooltipFor (const juce::String& paramID)
         { "fxChorus.depth",    "Depth: how far the chorus voices drift in pitch." },
         { "fxChorus.feedback", "Feedback: feeds the chorus back into itself for a more metallic sound." },
         { "fxChorus.width",    "Width: stereo spread of the chorus." },
-        { "fxChorus.mode",     "Mode. Vintage: darker, BBD-style. Modern: clean and bright." },
+        { "fxChorus.mode",     "Mode. Vintage: darker, BBD-style. Modern: clean and bright. VHS: a worn 80s tape, with wobble, hiss and a little grit." },
         { "fxChorus.mix",      "Mix: balance between the dry and chorused signal." },
 
         // Delay

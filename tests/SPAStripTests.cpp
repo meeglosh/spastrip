@@ -40,6 +40,7 @@
 
 #include "reference/GlitchMultiband.h"
 #include "reference/GrainFX_1_0_2.h"
+#include "reference/StereoChorus_1_0_2.h"
 
 #if JUCE_MAC
 // libmalloc's (private but long-stable) allocation hook, used by noAllocationTest.
@@ -283,8 +284,9 @@ namespace
         // fxDist..fxGrain; chaos.* and everything else is not an effect). The
         // number was obtained by dumping the synth registry (see report); it is
         // pinned here as a literal.
-        // 160 since SPASynth 1.0.31 added GRAIN RELEASE (ported here too).
-        constexpr int kSynthFxParamCount = 160;
+        // 160 since SPASynth 1.0.31 added GRAIN RELEASE, 166 since 1.0.32 added the six
+        // CHORUS VHS controls (both ported here too).
+        constexpr int kSynthFxParamCount = 166;
         // FILTER (added after the port) is new to the strip: enable, routing, filter 1 x5, filter 2 x6.
         constexpr int kFilterParamCount = 13;
         // COMP rebuild: knee / solo / bypass per band, in their own group.
@@ -399,7 +401,7 @@ namespace
         // Choice lists and their order.
         const auto choices = [] (const char* id) { return params::find (id)->choices; };
         expect (choices ("fxDist.type") == juce::StringArray ({ "Soft", "Hard", "Fold", "Crush" }), "fxDist.type choices");
-        expect (choices ("fxChorus.mode") == juce::StringArray ({ "Vintage", "Modern" }), "fxChorus.mode choices");
+        expect (choices ("fxChorus.mode") == juce::StringArray ({ "Vintage", "Modern", "VHS" }), "fxChorus.mode choices");
         expect (choices ("fxReverb.mode") == juce::StringArray ({ "Hall", "Plate", "Chamber", "Room", "Spring" }), "fxReverb.mode choices");
         expect (choices ("fxEQ.band0.type") == juce::StringArray ({ "Bell", "Low Shelf", "High Shelf", "Low Cut", "High Cut", "Notch", "Band Pass", "Tilt Shelf" }), "EQ band type choices");
         expect (choices ("fxEQ.band0.slope") == juce::StringArray ({ "6 dB", "12 dB", "18 dB", "24 dB", "36 dB", "48 dB" }), "EQ slope choices");
@@ -1308,6 +1310,7 @@ namespace
 #include "FilterTests.inc"
 #include "BenchCpu.inc"
 #include "LicensingTests.inc"
+#include "ChorusVhsTests.inc"
 }
 
 int main (int argc, char** argv)
@@ -1388,6 +1391,15 @@ int main (int argc, char** argv)
     RUN (fxModuleTests::grainReleaseLegacyFreezeLoadTest);
     RUN (fxModuleTests::grainReleaseSafetyTest);
     RUN (fxModuleTests::grainReleaseInjectionTest);
+    RUN (chorusVhsTests::legacyIdenticalTest);
+    RUN (chorusVhsTests::pitchModulationTest);
+    RUN (chorusVhsTests::toneTest);
+    RUN (chorusVhsTests::saturationTest);
+    RUN (chorusVhsTests::hissTest);
+    RUN (chorusVhsTests::dropoutTest);
+    RUN (chorusVhsTests::extremesTest);
+    RUN (chorusVhsTests::registryAndRandomizeTest);
+    RUN (chorusVhsTests::uiVisibilityTest);
     RUN (fxModuleTests::fxNewModulesOffBypassTest);
     RUN (fxModuleTests::grainBasicsTest);
     RUN (fxModuleTests::grainReverseTest);

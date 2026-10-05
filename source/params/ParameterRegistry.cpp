@@ -151,10 +151,35 @@ static std::vector<ParamDef> buildDefs()
     // saved before the change shift as little as possible.
     p.push_back ({ fx::chorusMode, "Chorus Mode", Section::fxChorus,
                    ParamKind::choiceParam, {}, 1.0f /* Modern */, "",
-                   { .enabled = true }, { "Vintage", "Modern" } });
+                   { .enabled = true }, { "Vintage", "Modern", "VHS" } });
     p.push_back ({ fx::chorusMix, "Chorus Mix", Section::fxChorus,
                    ParamKind::floatParam, { 0.0f, 1.0f }, 0.5f, "",
                    { .enabled = true, .biasCentre = 0.5f, .biasStrength = 0.3f } , {}, true});
+
+    // VHS-mode controls (SPASynth 1.0.32, same IDs / ranges / specs and the
+    // same registry position, so Randomize All keeps drawing exactly as the
+    // synth's FX flow does). Shown only when Mode = VHS. Percentages (the /100
+    // is in SPAStripProcessor::updateFXParams). Not mod destinations (excluded
+    // in ModTargets.cpp, as in the synth). RANDOMIZE ALL keeps them moderate:
+    // DROPOUTS and HISS never past 40 %.
+    p.push_back ({ fx::chorusVhsWow, "Chorus Wow", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 40.0f, "%",
+                   { .enabled = true, .minNorm = 0.15f, .maxNorm = 0.7f } });
+    p.push_back ({ fx::chorusVhsFlutter, "Chorus Flutter", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 25.0f, "%",
+                   { .enabled = true, .maxNorm = 0.6f } });
+    p.push_back ({ fx::chorusVhsTone, "Chorus Tone", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 45.0f, "%",
+                   { .enabled = true, .minNorm = 0.2f, .maxNorm = 0.9f } });
+    p.push_back ({ fx::chorusVhsSat, "Chorus Saturation", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 30.0f, "%",
+                   { .enabled = true, .maxNorm = 0.7f } });
+    p.push_back ({ fx::chorusVhsHiss, "Chorus Hiss", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 15.0f, "%",
+                   { .enabled = true, .maxNorm = 0.4f } });
+    p.push_back ({ fx::chorusVhsDropouts, "Chorus Dropouts", Section::fxChorus,
+                   ParamKind::floatParam, { 0.0f, 100.0f }, 10.0f, "%",
+                   { .enabled = true, .maxNorm = 0.4f } });
 
     p.push_back ({ fx::delayEnable, "Delay On", Section::fxDelay,
                    ParamKind::boolParam, {}, 0.0f, "",

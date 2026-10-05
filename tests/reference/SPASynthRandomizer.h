@@ -64,6 +64,13 @@ inline void randomizeAllFx (spa::SPAStripProcessor& proc, float wildness, juce::
         if (auto* param = apvts.getParameter (def.id))
         {
             auto v = synthref::sampleRandomValue (def.random, wildness, rng);
+            // SPASynth 1.0.32: chorus mode's VHS share (top 18% of the roll).
+            if (def.id == params::id::fx::chorusMode && def.choices.size() == 3)
+            {
+                constexpr float vhsShare = 0.18f;
+                const int index = v >= 1.0f - vhsShare ? 2 : (v / (1.0f - vhsShare) < 0.5f ? 0 : 1);
+                v = (float) index / 2.0f;
+            }
             param->beginChangeGesture();
             param->setValueNotifyingHost (v);
             param->endChangeGesture();
@@ -124,6 +131,12 @@ inline void randomizeAllFx (spa::SPAStripProcessor& proc, float wildness, juce::
 
         if (realValue (fx::convStart) > 0.5f)
             setNorm (fx::convStart, 0.5f);
+
+        // SPASynth 1.0.32 reverb lo-cut quiet-roll guard.
+        if (realValue (fx::reverbEnable) >= 0.5f
+            && realValue (fx::reverbLowCut) > 250.0f
+            && realValue (fx::reverbMix) > 0.5f)
+            setNorm (fx::reverbMix, 0.5f);
     }
 }
 

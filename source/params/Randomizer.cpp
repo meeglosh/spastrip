@@ -276,7 +276,17 @@ void randomizeAll (juce::AudioProcessorValueTreeState& apvts, float wildness, ju
         if (param == nullptr)
             continue;
 
-        const auto v = sampleRandomValue (def.random, wildness, rng);
+        auto v = sampleRandomValue (def.random, wildness, rng);
+
+        // Chorus mode (SPASynth 1.0.32): VHS (index 2) is reached by the top
+        // 18% of the roll; the rest keeps the old Vintage/Modern split
+        // (round(v) over 0..1 becomes round(v / 0.82)), so no extra RNG draw.
+        if (def.id == id::fx::chorusMode && def.choices.size() == 3)
+        {
+            constexpr float vhsShare = 0.18f;
+            const int index = v >= 1.0f - vhsShare ? 2 : (v / (1.0f - vhsShare) < 0.5f ? 0 : 1);
+            v = (float) index / 2.0f;
+        }
 
         // Limiter: drawn (RNG parity with the synth) but not written; step 3
         // sets every limiter parameter to its final value.
@@ -326,6 +336,22 @@ void randomizeAll (juce::AudioProcessorValueTreeState& apvts, float wildness, ju
         if (auto* start = apvts.getParameter (id::fx::convStart))
             if (start->convertFrom0to1 (start->getValue()) > 0.5f)
                 writeNorm (*start, start->convertTo0to1 (0.5f));
+
+    // 7. Reverb lo-cut guard (SPASynth 1.0.32): a mostly-wet reverb high-passed
+    // above the low register carries almost none of the track, so the sum goes
+    // quiet and thin. Keep at least half the dry. Deterministic, draws nothing.
+    if (! isLocked (lockMask, Module::reverb))
+    {
+        const auto real = [&apvts] (const char* pid)
+        {
+            auto* p = apvts.getParameter (pid);
+            return p != nullptr ? p->convertFrom0to1 (p->getValue()) : 0.0f;
+        };
+        if (real (id::fx::reverbEnable) >= 0.5f && real (id::fx::reverbLowCut) > 250.0f
+            && real (id::fx::reverbMix) > 0.5f)
+            if (auto* mix = apvts.getParameter (id::fx::reverbMix))
+                writeNorm (*mix, 0.5f);
+    }
 }
 
 bool isAudibleModTarget (juce::AudioProcessorValueTreeState& apvts, const juce::String& targetId, juce::uint32 lockMask)

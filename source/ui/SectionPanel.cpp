@@ -282,6 +282,8 @@ std::vector<SectionPanel::DensePlacement> SectionPanel::computeDensePlacements (
     for (int i = 0; i < (int) controls.size(); ++i)
     {
         const auto& c = controls[(size_t) i];
+        if (! c.component->isVisible())
+            continue;
         int itemWidth = denseKnobWidth;
         if (c.isToggle)
         {
@@ -421,7 +423,12 @@ void SectionPanel::resized()
             else   // knob
             {
                 control.label->setBounds (cellBounds.removeFromBottom (labelH));
-                control.component->setBounds (cellBounds.reduced (2));
+                // Diameter must not follow the cell (SPASynth 1.0.32): a long
+                // caption widens its cell, and the knob would grow with it.
+                // Every dense knob gets the same square, centred in its cell.
+                const auto knobArea = cellBounds.reduced (2);
+                const auto side = juce::jmin (denseKnobWidth - 4, knobArea.getHeight());
+                control.component->setBounds (knobArea.withSizeKeepingCentre (side, juce::jmin (side, knobArea.getHeight())));
             }
         }
         return;
@@ -478,6 +485,17 @@ void SectionPanel::resized()
                 cellBounds.getWidth() - 10, juce::jmin (22, cellBounds.getHeight())));
         }
     }
+}
+
+void SectionPanel::setControlVisible (const juce::String& paramID, bool shouldBeVisible)
+{
+    for (auto& c : controls)
+        if (c.component->getProperties()["paramID"].toString() == paramID)
+        {
+            c.component->setVisible (shouldBeVisible);
+            if (c.label != nullptr)
+                c.label->setVisible (shouldBeVisible);
+        }
 }
 
 std::vector<juce::Component*> SectionPanel::findControlComponents (const juce::String& paramID) const

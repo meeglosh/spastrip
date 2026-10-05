@@ -260,7 +260,14 @@ void FXChain::processChorus (juce::AudioBuffer<float>& buffer, const Params& p)
 {
     StereoChorus::Params cp;
     cp.enable = p.chorusEnable;   // StereoChorus early-outs and tracks the edge
-    cp.mode = p.chorusMode == 0 ? StereoChorus::Mode::vintage : StereoChorus::Mode::modern;
+    cp.mode = p.chorusMode == 0 ? StereoChorus::Mode::vintage
+            : p.chorusMode == 2 ? StereoChorus::Mode::vhs : StereoChorus::Mode::modern;
+    cp.vhsWow = p.chorusVhsWow;
+    cp.vhsFlutter = p.chorusVhsFlutter;
+    cp.vhsTone = p.chorusVhsTone;
+    cp.vhsSat = p.chorusVhsSat;
+    cp.vhsHiss = p.chorusVhsHiss;
+    cp.vhsDropouts = p.chorusVhsDropouts;
     cp.rateHz = p.chorusRate;
     cp.depth = p.chorusDepth;
     cp.feedback = p.chorusFeedback;

@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <cmath>
+#include <cstdint>
 
 namespace spa::dsp
 {
@@ -25,6 +26,10 @@ namespace spa::dsp
 //     delay's limited bandwidth, gentle saturation, and the 106's signature
 //     wet polarity inversion between left and right. Character, not a circuit
 //     model.
+//   VHS     -- 80s synthwave tape (1.0.32): slow irregular WOW, faster
+//     FLUTTER, tape-bandwidth TONE, soft saturation, signal-following hiss
+//     and brief dropouts. Self-contained (processVhs); Vintage and Modern
+//     never touch any of it and stay sample-identical to 1.0.31.
 //   Modern  -- clean digital. Sine LFO, longer centre delay, wider sweep, two
 //     taps per channel for a thicker bed, full bandwidth, no saturation.
 //
@@ -34,7 +39,7 @@ class StereoChorus
 {
 public:
     // Append-only: serialized as the fxChorus.mode choice parameter.
-    enum class Mode { vintage, modern };
+    enum class Mode { vintage, modern, vhs };
 
     struct Params
     {
@@ -45,6 +50,14 @@ public:
         float feedback = 0.0f;      // -0.9..0.9, clamped below
         float width = 0.5f;         // 0..1 L/R LFO phase offset, 1 = 180 deg
         float mix = 0.5f;           // 0 = dry, 1 = fully wet
+        // VHS mode only, all 0..1. RATE sets the wow speed (and nudges the
+        // flutter), DEPTH scales both modulation amounts, FB/MIX/WIDTH as usual.
+        float vhsWow = 0.4f;
+        float vhsFlutter = 0.25f;
+        float vhsTone = 0.45f;
+        float vhsSat = 0.3f;
+        float vhsHiss = 0.15f;
+        float vhsDropouts = 0.1f;
     };
 
     void prepare (double sr, int /*maxBlockSize*/)
@@ -67,6 +80,7 @@ public:
         writePos = 0;
         lfoPhase = 0.0f;
         wasEnabled = false;
+        resetVhs();
     }
 
     // Self-contained enable-edge tracking, same idiom as ModEffect: the chain
@@ -93,7 +107,14 @@ public:
             delayBuf.clear();
             for (auto& st : channels)
                 st = {};
+            resetVhs();
             wasEnabled = true;
+        }
+
+        if (p.mode == Mode::vhs)
+        {
+            processVhs (buffer, p, n, numCh);
+            return;
         }
 
         const bool vintage = (p.mode == Mode::vintage);
@@ -239,6 +260,258 @@ private:
             i1 -= len;
 
         return line[i0] + frac * (line[i1] - line[i0]);
+    }
+
+
+    // ---- VHS voicing ------------------------------------------------------
+    // Everything below is sized in prepare() (the shared delay line) or is a
+    // fixed-size member, so processVhs() allocates nothing. All time constants
+    // derive from sampleRate -- the FX chain runs at the oversampled rate.
+    struct Biquad
+    {
+        float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+        float z1[2] { 0, 0 }, z2[2] { 0, 0 };
+
+        void setLowpass (double sr, double fc, double q)
+        {
+            fc = juce::jmin (fc, sr * 0.45);
+            const double w = 2.0 * juce::MathConstants<double>::pi * fc / sr;
+            const double al = std::sin (w) / (2.0 * q), c = std::cos (w), a0 = 1.0 + al;
+            b0 = (float) ((1.0 - c) * 0.5 / a0);
+            b1 = (float) ((1.0 - c) / a0);
+            b2 = b0;
+            a1 = (float) (-2.0 * c / a0);
+            a2 = (float) ((1.0 - al) / a0);
+        }
+
+        void setPeak (double sr, double fc, double q, double gainDb)
+        {
+            const double A = std::pow (10.0, gainDb / 40.0);
+            const double w = 2.0 * juce::MathConstants<double>::pi * fc / sr;
+            const double al = std::sin (w) / (2.0 * q), c = std::cos (w), a0 = 1.0 + al / A;
+            b0 = (float) ((1.0 + al * A) / a0);
+            b1 = (float) (-2.0 * c / a0);
+            b2 = (float) ((1.0 - al * A) / a0);
+            a1 = b1;
+            a2 = (float) ((1.0 - al / A) / a0);
+        }
+
+        float run (int ch, float x)
+        {
+            const float y = b0 * x + z1[ch];
+            z1[ch] = b1 * x - a1 * y + z2[ch];
+            z2[ch] = b2 * x - a2 * y;
+            // Flush: a decaying filter tail otherwise lingers in denormals for
+            // seconds, and "silent in, exactly silent out" is a promise (HISS).
+            if (std::abs (z1[ch]) < 1.0e-20f) z1[ch] = 0.0f;
+            if (std::abs (z2[ch]) < 1.0e-20f) z2[ch] = 0.0f;
+            return y;
+        }
+    };
+
+    struct Walker   // smoothed random walk in about [-1, 1]
+    {
+        float cur = 0.0f, target = 0.0f;
+        int countdown = 0;
+    };
+
+    struct VhsState
+    {
+        Biquad warmth, lp;
+        float hissHp[2] { 0, 0 }, hissLp[2] { 0, 0 }, dropLp[2] { 0, 0 };
+        float fb[2] { 0, 0 };
+        Walker wowCommon, wowOwn[2], flutOwn[2];
+        float phW1 = 0, phW2 = 0, phF1 = 0, phF2 = 0;
+        float env = 0.0f;
+        float dropEnv = 0.0f, dropEnv1 = 0.0f, dropTarget = 0.0f;
+        int dropRemaining = 0;
+        float lastTone = -1.0f;
+        std::uint32_t rng = 0x1badf00du;
+        std::uint32_t hissRng = 0x2545f491u;   // own stream: hiss never shifts wow/dropout draws
+    };
+    VhsState vhs;
+
+    void resetVhs() { vhs = VhsState {}; }
+
+    float vhsRand01()
+    {
+        auto& s = vhs.rng;
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return (float) (s >> 8) * (1.0f / 16777216.0f);
+    }
+
+    float hissWhite()
+    {
+        auto& s = vhs.hissRng;
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return ((float) (s >> 8) * (1.0f / 16777216.0f) * 2.0f - 1.0f) * 1.732f;   // ~unit RMS
+    }
+
+    float stepWalker (Walker& w, float meanSamples, float smooth)
+    {
+        if (--w.countdown <= 0)
+        {
+            w.target = vhsRand01() * 2.0f - 1.0f;
+            w.countdown = juce::jmax (1, (int) (meanSamples * (0.5f + vhsRand01())));
+        }
+        w.cur += smooth * (w.target - w.cur);
+        return w.cur;
+    }
+
+    void processVhs (juce::AudioBuffer<float>& buffer, const Params& p, int n, int numCh)
+    {
+        const float sr = (float) sampleRate;
+        const float wow = juce::jlimit (0.0f, 1.0f, p.vhsWow);
+        const float flutter = juce::jlimit (0.0f, 1.0f, p.vhsFlutter);
+        const float tone = juce::jlimit (0.0f, 1.0f, p.vhsTone);
+        const float sat = juce::jlimit (0.0f, 1.0f, p.vhsSat);
+        const float hiss = juce::jlimit (0.0f, 1.0f, p.vhsHiss);
+        const float drop = juce::jlimit (0.0f, 1.0f, p.vhsDropouts);
+        const float mix = juce::jlimit (0.0f, 1.0f, p.mix);
+        const float fbAmt = juce::jlimit (-0.85f, 0.85f, p.feedback);
+        const float width = juce::jlimit (0.0f, 1.0f, p.width);
+        // DEPTH is the master modulation scale; 0.3 (the knob's default) = 1.
+        const float modScale = juce::jlimit (0.0f, 2.5f, juce::jlimit (0.0f, 1.0f, p.depth) / 0.3f);
+
+        // TONE: 2-pole low-pass, 5.5 kHz (0) .. 16 kHz (1), exponential, plus a
+        // gentle low-mid warmth bump that fades as the tape brightens.
+        if (tone != vhs.lastTone)
+        {
+            vhs.lastTone = tone;
+            const double fc = 5500.0 * std::pow (16000.0 / 5500.0, (double) tone);
+            vhs.lp.setLowpass (sampleRate, fc, 0.7071);
+            vhs.warmth.setPeak (sampleRate, 250.0, 0.8, 1.0 + 2.0 * (1.0 - (double) tone));
+        }
+
+        // WOW: delay modulation, amplitude 7 ms at full (pitch deviation is
+        // 2*pi*f*A, so ~24 cents peak at the default 0.8 Hz / 40 %). FLUTTER:
+        // 0.32 ms at full around 9 Hz (~8 cents at the default 25 %).
+        const float wowHz = juce::jlimit (0.25f, 1.5f, p.rateHz);
+        const float flutHz = 9.0f * (0.75f + 0.5f * juce::jlimit (0.0f, 1.0f, wowHz / 1.5f));
+        const float wowAmpMs = juce::jmin (16.0f, 7.0f * wow * modScale);
+        const float flutAmpMs = 0.32f * flutter * modScale;
+        const float incW1 = wowHz / sr, incW2 = wowHz * 0.37f / sr;
+        const float incF1 = flutHz / sr, incF2 = flutHz * 1.618f / sr;
+        const float wowWalkLen = sr / wowHz, wowSmooth = 1.0f - std::exp (-6.2831853f * wowHz * 0.7f / sr);
+        const float flutWalkLen = sr / flutHz, flutSmooth = 1.0f - std::exp (-6.2831853f * flutHz / sr);
+        const float centreMs = 20.0f;
+
+        // SATURATION: tanh drive, normalised at a 0.3 peak so a moderate signal
+        // keeps its level (the knob changes colour, not loudness).
+        const float satDrive = 1.0f + 4.0f * sat;
+        // The 0.1 trim keeps full drive within 1 dB (a squashed sine gains RMS).
+        const float satNorm = (0.3f / std::tanh (satDrive * 0.3f)) * (1.0f - 0.1f * sat);
+        const bool satOn = sat > 1.0e-4f;
+
+        // HISS follows the input: ~10 ms attack, ~400 ms release on |dry|.
+        const float hissAmp = 0.08f * hiss * hiss;
+        const float envA = 1.0f - std::exp (-1.0f / (0.010f * sr));
+        const float envR = 1.0f - std::exp (-1.0f / (0.400f * sr));
+        const float hissHpC = 1.0f - std::exp (-6.2831853f * 2000.0f / sr);
+        const float hissLpC = 1.0f - std::exp (-6.2831853f * 9000.0f / sr);
+
+        // DROPOUTS: 0.05 + 1.5*knob events/s, 10-80 ms, smoothed edges.
+        const float dropRate = drop > 0.0f ? (0.05f + 1.5f * drop) / sr : 0.0f;
+        const float dropAtk = 1.0f - std::exp (-1.0f / (0.002f * sr));
+        const float dropRel = 1.0f - std::exp (-1.0f / (0.006f * sr));
+        const float dropLpC = 1.0f - std::exp (-6.2831853f * 1500.0f / sr);
+
+        float* chData[2] { buffer.getWritePointer (0),
+                           numCh > 1 ? buffer.getWritePointer (1) : nullptr };
+        float* lines[2] { delayBuf.getWritePointer (0), delayBuf.getWritePointer (1) };
+
+        for (int i = 0; i < n; ++i)
+        {
+            // Shared (both channels) once per sample.
+            const float common = stepWalker (vhs.wowCommon, wowWalkLen, wowSmooth);
+            float walkOwnW[2], walkOwnF[2];
+            for (int ch = 0; ch < numCh; ++ch)
+            {
+                walkOwnW[ch] = stepWalker (vhs.wowOwn[ch], wowWalkLen, wowSmooth);
+                walkOwnF[ch] = stepWalker (vhs.flutOwn[ch], flutWalkLen, flutSmooth);
+            }
+
+            // Dropout event state machine (common to both channels).
+            if (vhs.dropRemaining > 0)
+            {
+                if (--vhs.dropRemaining == 0)
+                    vhs.dropTarget = 0.0f;
+            }
+            else if (dropRate > 0.0f && vhsRand01() < dropRate)
+            {
+                vhs.dropRemaining = (int) (sr * (0.010f + 0.070f * vhsRand01()));
+                vhs.dropTarget = (0.5f + 0.5f * vhsRand01()) * (0.25f + 0.75f * drop);
+            }
+            // Two cascaded one-poles: the level starts moving with zero slope,
+            // so an event's edge has no kink (a single pole steps on sample 1).
+            vhs.dropEnv1 += (vhs.dropTarget > vhs.dropEnv1 ? dropAtk : dropRel) * (vhs.dropTarget - vhs.dropEnv1);
+            vhs.dropEnv += (vhs.dropTarget > vhs.dropEnv ? dropAtk : dropRel) * (vhs.dropEnv1 - vhs.dropEnv);
+            if (vhs.dropRemaining == 0 && vhs.dropEnv1 < 1.0e-6f)
+                vhs.dropEnv1 = vhs.dropEnv = 0.0f;
+
+            float inPeak = 0.0f;
+            for (int ch = 0; ch < numCh; ++ch)
+                inPeak = juce::jmax (inPeak, std::abs (chData[ch][i]));
+            vhs.env += (inPeak > vhs.env ? envA : envR) * (inPeak - vhs.env);
+            if (vhs.env < 1.0e-4f)
+                vhs.env = 0.0f;   // -80 dB: exact silence once the release has run out
+
+            for (int ch = 0; ch < numCh; ++ch)
+            {
+                float* line = lines[ch];
+                const float chOff = ch == 1 ? 0.5f * width * 0.3f : 0.0f;
+
+                auto sinp = [] (float ph) { return std::sin (ph * 6.2831853f); };
+                const float wowSig = (0.5f * sinp (vhs.phW1 + chOff) + 0.3f * sinp (vhs.phW2 + 2.0f * chOff)
+                                      + 0.4f * ((1.0f - width) * common + width * walkOwnW[ch])) / 1.2f;
+                const float flutSig = 0.7f * sinp (vhs.phF1 + 3.0f * chOff) + 0.3f * sinp (vhs.phF2)
+                                      + 0.25f * walkOwnF[ch];
+
+                const float dry = chData[ch][i];
+                line[writePos] = dry + fbAmt * juce::jlimit (-2.0f, 2.0f, vhs.fb[ch]);
+
+                float wet = readLine (line, delayLen, writePos,
+                                      msToSamples (centreMs + wowAmpMs * wowSig + flutAmpMs * flutSig));
+
+                if (satOn)
+                    wet = satNorm * std::tanh (satDrive * wet);
+
+                wet = vhs.lp.run (ch, vhs.warmth.run (ch, wet));
+
+                // Dropout: level dip + treble loss.
+                if (vhs.dropEnv > 0.0f)
+                {
+                    vhs.dropLp[ch] += dropLpC * (wet - vhs.dropLp[ch]);
+                    const float e = vhs.dropEnv;
+                    wet = (wet + e * (vhs.dropLp[ch] - wet)) * (1.0f - 0.6f * e);
+                }
+                else
+                    vhs.dropLp[ch] = wet;
+
+                vhs.fb[ch] = wet;
+
+                if (vhs.env > 0.0f && hissAmp > 0.0f)
+                {
+                    const float white = hissWhite();
+                    vhs.hissHp[ch] += hissHpC * (white - vhs.hissHp[ch]);
+                    vhs.hissLp[ch] += hissLpC * ((white - vhs.hissHp[ch]) - vhs.hissLp[ch]);
+                    wet += vhs.hissLp[ch] * hissAmp * juce::jmin (1.0f, vhs.env * 4.0f) ;
+                }
+                else
+                {
+                    vhs.hissHp[ch] = 0.0f;
+                    vhs.hissLp[ch] = 0.0f;
+                }
+
+                chData[ch][i] = dry + (wet - dry) * mix;
+            }
+
+            auto wrap = [] (float& ph, float inc) { ph += inc; if (ph >= 1.0f) ph -= 1.0f; };
+            wrap (vhs.phW1, incW1); wrap (vhs.phW2, incW2);
+            wrap (vhs.phF1, incF1); wrap (vhs.phF2, incF2);
+            if (++writePos >= delayLen)
+                writePos = 0;
+        }
     }
 
     double sampleRate = 48000.0;

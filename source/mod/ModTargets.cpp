@@ -23,6 +23,9 @@ namespace
             "re-points the read by whole samples, which splices the audio (measured: a click train "
             "at -20..-55 dB re a steady tone even with a per-sample refresh, versus -90 dB "
             "unmodulated), and it cannot be smoothed without changing the DSP.";
+        const juce::String vhs =
+            "CHORUS VHS texture control: not a mod destination in SPASynth (kept identical), and only "
+            "heard in VHS mode.";
         return {
             { fx::convDecay,   reshape },
             { fx::convDamping, reshape },
@@ -35,6 +38,12 @@ namespace
               "tank lengths." },
             { fx::reverbPreDelay, intDelay },
             { fx::convPreDelay,   intDelay },
+            { fx::chorusVhsWow,      vhs },
+            { fx::chorusVhsFlutter,  vhs },
+            { fx::chorusVhsTone,     vhs },
+            { fx::chorusVhsSat,      vhs },
+            { fx::chorusVhsHiss,     vhs },
+            { fx::chorusVhsDropouts, vhs },
             { fx::grainRelease,
               "A decay time whose top of travel is a hold (FREEZE): modulation across that point "
               "would switch the cloud in and out of hold, and below it the loop gain is set once per "

@@ -103,7 +103,31 @@ FXPanel::FXPanel (juce::AudioProcessorValueTreeState& apvts, FXDisplay::Kind kin
         tip (id::fx::chorusMode,
              "Vintage is the warm, slightly dark bucket-brigade sound of a "
              "classic 80s polysynth. Modern is clean and digital, with a "
-             "longer, deeper sweep.");
+             "longer, deeper sweep. VHS is a worn 80s tape: wobble, "
+             "hiss and a little grit.");
+    }
+
+    if (section == params::Section::fxChorus)
+    {
+        for (auto* c : controls.findControlComponents (id::fx::chorusMode))
+            if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+                chorusModeCombo = cb;
+        if (chorusModeCombo != nullptr)
+            chorusModeCombo->addListener (this);
+        updateChorusModeVisibility();
+
+        auto tip = [this] (const juce::String& paramID, const juce::String& text)
+        {
+            for (auto* c : controls.findControlComponents (paramID))
+                if (auto* t = dynamic_cast<juce::SettableTooltipClient*> (c))
+                    t->setTooltip (text);
+        };
+        tip (id::fx::chorusVhsWow, "Slow, irregular pitch drift, like a worn tape. The seasick synthwave warble.");
+        tip (id::fx::chorusVhsFlutter, "Faster, finer pitch shimmer on top of the wow.");
+        tip (id::fx::chorusVhsTone, "Tape bandwidth. Down is dark and muffled; up is open, with a little warmth in the low mids.");
+        tip (id::fx::chorusVhsSat, "Soft tape saturation. Adds colour without making it louder.");
+        tip (id::fx::chorusVhsHiss, "Tape hiss that rides along with your sound and fades away with it.");
+        tip (id::fx::chorusVhsDropouts, "Brief dips in level and brightness, like a tired tape.");
     }
 
     if (! enableParamIds.isEmpty())
@@ -111,6 +135,24 @@ FXPanel::FXPanel (juce::AudioProcessorValueTreeState& apvts, FXDisplay::Kind kin
             std::vector<std::pair<juce::String, std::vector<juce::String>>> {
                 { "on", std::vector<juce::String> (enableParamIds.begin(), enableParamIds.end()) } },
             *this);
+}
+
+FXPanel::~FXPanel()
+{
+    if (chorusModeCombo != nullptr)
+        chorusModeCombo->removeListener (this);
+}
+
+void FXPanel::updateChorusModeVisibility()
+{
+    if (chorusModeCombo == nullptr)
+        return;
+    const bool vhs = chorusModeCombo->getSelectedItemIndex() == 2;
+    for (auto* pid : { id::fx::chorusVhsWow, id::fx::chorusVhsFlutter, id::fx::chorusVhsTone,
+                       id::fx::chorusVhsSat, id::fx::chorusVhsHiss, id::fx::chorusVhsDropouts })
+        controls.setControlVisible (pid, vhs);
+    resized();
+    controls.resized();   // same bounds can still mean a different row plan
 }
 
 void FXPanel::paint (juce::Graphics& g)

@@ -84,6 +84,8 @@ juce::Array<int> shuffleFxOrder (const juce::Array<int>& order, juce::uint32 loc
 //     overwrites all ten; the end state is identical to rolling then resetting.
 //  4. Convolve start hard-capped at 0.5 (only when convolve is unlocked).
 //  5. Grain FREEZE (never rolled) forced off (only when grain is unlocked).
+//  7. Reverb lo-cut guard (SPASynth 1.0.32; only when the reverb is unlocked):
+//     reverb on, LoCut above 250 Hz and MIX above 50 % -> MIX 50 %.
 //  6. FILTER guards (applyFilterGuards; only when the filter is unlocked and
 //     `guardFilter` is true -- the flag exists so a test can measure the
 //     unguarded roll): deterministic, they consume no random numbers.

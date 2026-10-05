@@ -377,6 +377,12 @@ private:
         FxFloat chorusRate, chorusDepth, chorusFeedback, chorusWidth;
         std::atomic<float>* chorusMode = nullptr;
         FxFloat chorusMix;
+        std::atomic<float>* chorusVhsWow = nullptr;
+        std::atomic<float>* chorusVhsFlutter = nullptr;
+        std::atomic<float>* chorusVhsTone = nullptr;
+        std::atomic<float>* chorusVhsSat = nullptr;
+        std::atomic<float>* chorusVhsHiss = nullptr;
+        std::atomic<float>* chorusVhsDropouts = nullptr;
 
         std::atomic<float>* delayEnable = nullptr;
         std::atomic<float>* delaySync = nullptr;

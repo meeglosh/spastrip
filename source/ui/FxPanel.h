@@ -10,7 +10,8 @@ namespace spa::ui
 
 // One generic FX tab: "[toggle] TITLE" header, the effect's live display on
 // top, the section's registry controls (knobs / combos / toggles) below.
-class FXPanel : public juce::Component
+class FXPanel : public juce::Component,
+                private juce::ComboBox::Listener
 {
 public:
     // enableParamIds: the section's on/off toggle param id(s) -- two for a tab
@@ -19,6 +20,7 @@ public:
              params::Section, const juce::String& title,
              const juce::StringArray& enableParamIds = {},
              const dsp::Telemetry* telemetry = nullptr);
+    ~FXPanel() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -26,6 +28,11 @@ public:
     FxPanelHeader* getHeaderForTest() { return header.get(); }
 
 private:
+    // CHORUS: the VHS knobs exist (and are laid out) only in VHS mode.
+    void comboBoxChanged (juce::ComboBox*) override { updateChorusModeVisibility(); }
+    void updateChorusModeVisibility();
+    juce::ComboBox* chorusModeCombo = nullptr;
+
     juce::String panelTitle;
     FXDisplay display;
     SectionPanel controls;

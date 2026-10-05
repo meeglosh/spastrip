@@ -80,7 +80,7 @@ juce::StringArray FXDisplay::watchedFor (Kind kind)
         case Kind::distortion: return { fx::distEnable, fx::distType, fx::distDrive, fx::distMix };
         case Kind::chorus:     return { fx::chorusEnable, fx::chorusRate, fx::chorusDepth,
                                         fx::chorusFeedback, fx::chorusWidth, fx::chorusMode,
-                                        fx::chorusMix };
+                                        fx::chorusMix, fx::chorusVhsWow, fx::chorusVhsFlutter };
         case Kind::delay:      return { fx::delayEnable, fx::delaySync, fx::delayTime,
                                         fx::delayDivision, fx::delayFeedback, fx::delayPingPong,
                                         fx::delayWidth, fx::delayMix };
@@ -272,7 +272,9 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             const auto depth = value (fx::chorusDepth);
             const auto widthPct = value (fx::chorusWidth);
             const auto feedback = value (fx::chorusFeedback);
-            const auto mode = (int) value (fx::chorusMode);   // 0 Vintage, 1 Modern
+            const auto mode = (int) value (fx::chorusMode);   // 0 Vintage, 1 Modern, 2 VHS
+            const auto vhsWow = value (fx::chorusVhsWow) * 0.01f;
+            const auto vhsFlutter = value (fx::chorusVhsFlutter) * 0.01f;
             const auto mix = value (fx::chorusMix);
             const bool enabled = value (fx::chorusEnable) >= 0.5f;
 
@@ -284,7 +286,7 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             const auto cycles = juce::jmap (std::log (juce::jlimit (rateLo, rateHi, rate)),
                                             std::log (rateLo), std::log (rateHi), 1.2f, 7.0f);
             const auto scrollCycles = (enabled && isLiveShowing (*this))
-                                     ? (float) (fxDisplayNowMs() * 0.001 * rate) : 0.0f;
+                                     ? (float) std::fmod (fxDisplayNowMs() * 0.001 * rate, 2000.0) : 0.0f;   // wrap in double: a float of uptime*rate loses the fraction and staircases the trace
             const auto offsetCycles = 0.5f * (widthPct / 100.0f);   // 0..0.5 cycle (0..180deg)
 
             // Thin the glow as density rises -- at max rate the crossings
@@ -293,18 +295,27 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             const auto densityT = juce::jmap (cycles, 1.2f, 7.0f, 0.0f, 1.0f);
             const auto strokeThickness = juce::jmap (densityT, 1.4f, 0.85f);
 
-            for (int voice = 0; voice < 2; ++voice)
+            const auto wowAmp = vhsWow, flutAmp = vhsFlutter;
+            // VHS is one tape, not two voices: a single smooth trace.
+            for (int voice = 0; voice < (mode == 2 ? 1 : 2); ++voice)
             {
                 juce::Path curve;
-                constexpr int steps = 140;
+                const int steps = mode == 2 ? 360 : 140;
                 for (int i = 0; i <= steps; ++i)
                 {
                     const auto x01 = (float) i / steps;
                     const auto phase = x01 * cycles + scrollCycles
                                       + (voice == 1 ? offsetCycles : 0.0f);
-                    const auto shape = mode == 0 ? triangleBipolarPhase (phase)
-                                                 : sineBipolarPhase (phase);
-                    const auto v = shape * depth * (0.25f + 0.75f * mix);
+                    // VHS: an irregular seasick wobble (slow incommensurate
+                    // waves = WOW) with a fine ripple on top (FLUTTER).
+                    const auto shape = mode == 2
+                        ? 0.55f * wowAmp * (0.6f * sineBipolarPhase (phase * 0.45f)
+                                            + 0.4f * sineBipolarPhase (phase * 0.166f + 0.3f))
+                            + 0.25f * flutAmp * sineBipolarPhase (phase * 2.3f)
+                        : (mode == 0 ? triangleBipolarPhase (phase)
+                                     : sineBipolarPhase (phase));
+                    const auto v = mode == 2 ? shape * (0.25f + 0.75f * mix) * 1.6f
+                                             : shape * depth * (0.25f + 0.75f * mix);
                     const auto x = area.getX() + area.getWidth() * x01;
                     const auto y = area.getCentreY() - v * area.getHeight() * 0.42f;
                     if (i == 0)
@@ -321,7 +332,7 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             // FEEDBACK: an honest ghost -- a faint, slightly sharpened repeat
             // of voice 0's trace shifted forward, standing in for the
             // resonant echo a comb-like feedback path adds. Absent at 0.
-            if (std::abs (feedback) > 0.02f)
+            if (mode != 2 && std::abs (feedback) > 0.02f)
             {
                 juce::Path ghost;
                 constexpr int steps = 140;
