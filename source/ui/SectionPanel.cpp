@@ -125,6 +125,8 @@ SectionPanel::SectionPanel (juce::AudioProcessorValueTreeState& apvts,
         }
 
         control.component->getProperties().set ("paramID", def.id);
+        if (auto* tip = dynamic_cast<juce::SettableTooltipClient*> (control.component.get()))
+            tip->setTooltip (tooltipFor (def.id));
         addAndMakeVisible (*control.component);
         if (control.label != nullptr)
             addAndMakeVisible (*control.label);

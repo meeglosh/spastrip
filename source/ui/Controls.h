@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Theme.h"
+#include "ParamTooltips.h"
 #include "../params/ParameterRegistry.h"
 
 namespace spa::ui
@@ -63,6 +64,7 @@ public:
         // the editor's content component, which owns Cmd/Ctrl+Z.
         slider.setWantsKeyboardFocus (false);
         slider.getProperties().set ("paramID", paramID);      // mod-viz driver / assign menu look it up
+        slider.setTooltip (tooltipFor (paramID));
         if (modColoured)
             slider.setComponentID ("mod");
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -168,6 +170,7 @@ public:
     {
         combo.setWantsKeyboardFocus (false);
         combo.getProperties().set ("paramID", paramID);
+        combo.setTooltip (tooltipFor (paramID));
         if (const auto* def = params::find (paramID))
             combo.addItemList (def->choices, 1);
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
@@ -199,6 +202,7 @@ public:
     {
         button.setWantsKeyboardFocus (false);
         button.getProperties().set ("paramID", paramID);
+        button.setTooltip (tooltipFor (paramID));
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
             apvts, paramID, button);
         addAndMakeVisible (button);
