@@ -140,3 +140,16 @@ export SPASYNTH_NOTARIZE_PROFILE="SPASYNTH_NOTARY"   # fallback; ~/.config/spasy
 ## Launch checklist additions
 
 - Newsletter page: when this product is announced, add it to an "Our tools" list on silverplatteraudio.com/pages/newsletter (Shopify → Online Store → Pages → "Silverplatter Audio newsletter"; the list was removed 2026-10-04 so the page didn't preview unreleased products, so recreate the heading if it's the first). Approved one-liner — SPAStrip: The Silverplatter Audio effects chain, in a single plugin.
+
+## 2026-10-04: Phil's feedback round -> 1.0.2 (sent for testing)
+
+- EQ: curve and nodes now drawn from modulated values (`EqEditor::liveBand`).
+- Tooltips on every parameter control from one table: `source/ui/ParamTooltips.h`
+  (Knob / Choice / Toggle / SectionPanel pick it up automatically).
+- COMP rebuilt (`source/ui/CompPanel.h`): spectrum behind bands, drag band = threshold,
+  drag line = crossover, wheel = down ratio, transfer curve, IN/GR/OUT meters, per-band
+  Knee / Solo / Bypass (new params in their own host group "FX Comp Bands", appended
+  last so no host index moves; knee 0 = original hard knee, still bit-identical to
+  SPAGlitch). Display names: Threshold, Down Ratio, Up Ratio, Makeup, Low/High Crossover.
+- Pending: Phil's sign-off on the new COMP, then port DSP (`Multiband.h`) + panel to
+  SPASynth and SPAGlitch (owner's decision: finish here first, then copy).
