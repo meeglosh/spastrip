@@ -314,6 +314,27 @@ private:
     }
     bool bandEnabled (int b) const { return rawBand (b, params::id::fx::eqband::enable) >= 0.5f; }
 
+    // What the DSP is actually running: the band parameter plus whatever the
+    // mod matrix is adding to it (the same normalised base + summed slot
+    // offsets, clamped, that the engine and the knob overlays use). Drawing
+    // goes through this so a modulated bell moves on screen as it does in the
+    // audio; edits (drag / wheel / menus) keep reading rawBand so they act on
+    // the user's own setting, never the modulated one.
+    float liveBand (int b, const char* key) const
+    {
+        const auto id = params::id::eqBand (b, key);
+        float offset = 0.0f;
+        for (int s = 0; s < SPAStripProcessor::numModSlots; ++s)
+            if (processor.getModSlotTarget (s) == id)
+                offset += telemetry.modSlotOffset[(size_t) s].load (std::memory_order_relaxed);
+        if (offset == 0.0f)
+            return rawBand (b, key);
+        auto* p = apvts.getParameter (id);
+        if (p == nullptr)
+            return rawBand (b, key);
+        return p->convertFrom0to1 (juce::jlimit (0.0f, 1.0f, p->getValue() + offset));
+    }
+
     void setBandRaw (int b, const char* key, float realValue)
     {
         const auto id = params::id::eqBand (b, key);
@@ -335,9 +356,9 @@ private:
             bd.enabled = bandEnabled (b);
             bd.type    = (int) rawBand (b, params::id::fx::eqband::type);
             bd.slope   = (int) rawBand (b, params::id::fx::eqband::slope);
-            bd.freq    = rawBand (b, params::id::fx::eqband::freq);
-            bd.gainDb  = rawBand (b, params::id::fx::eqband::gain);
-            bd.q       = rawBand (b, params::id::fx::eqband::q);
+            bd.freq    = liveBand (b, params::id::fx::eqband::freq);
+            bd.gainDb  = liveBand (b, params::id::fx::eqband::gain);
+            bd.q       = liveBand (b, params::id::fx::eqband::q);
         }
         return bands;
     }
@@ -483,8 +504,8 @@ private:
     juce::Point<float> nodeCentre (int b) const
     {
         const int type = (int) rawBand (b, params::id::fx::eqband::type);
-        const float gain = isGainType (type) ? rawBand (b, params::id::fx::eqband::gain) : 0.0f;
-        return { freqToX (rawBand (b, params::id::fx::eqband::freq)),
+        const float gain = isGainType (type) ? liveBand (b, params::id::fx::eqband::gain) : 0.0f;
+        return { freqToX (liveBand (b, params::id::fx::eqband::freq)),
                  dbToY (juce::jlimit (-dbRange, dbRange, gain)) };
     }
 
@@ -792,7 +813,7 @@ private:
                 for (const char* key : { params::id::fx::eqband::enable, params::id::fx::eqband::type,
                                          params::id::fx::eqband::slope, params::id::fx::eqband::freq,
                                          params::id::fx::eqband::gain, params::id::fx::eqband::q })
-                    sig[k++] = rawBand (b, key);
+                    sig[k++] = liveBand (b, key);   // live, so modulation alone repaints
             sig[k++] = value (params::id::fx::eqEnable);
             sig[k++] = value (params::id::fx::eqCharacter);
         }
