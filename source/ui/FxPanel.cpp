@@ -12,7 +12,16 @@ FXPanel::FXPanel (juce::AudioProcessorValueTreeState& apvts, FXDisplay::Kind kin
                   const dsp::Telemetry* telemetry)
     : panelTitle (title),
       display (apvts, kind, telemetry),
-      controls (apvts, section, title, enableParamIds, false, true)   // dense=true: FXPanel only; enable toggles live in the header
+      controls (apvts, section, title,
+                // GLITTER's legacy FREEZE param stays registered but has no control (RELEASE replaced it).
+                [&]
+                {
+                    auto ids = enableParamIds;
+                    if (section == params::Section::fxGrain)
+                        ids.add (id::fx::grainFreeze);
+                    return ids;
+                }(),
+                false, true)   // dense=true: FXPanel only; enable toggles live in the header
 {
     addAndMakeVisible (display);
     addAndMakeVisible (controls);
@@ -71,7 +80,8 @@ FXPanel::FXPanel (juce::AudioProcessorValueTreeState& apvts, FXDisplay::Kind kin
         tip (id::fx::grainSpreadPitch, "Random pitch per grain, up to this many semitones either way.");
         tip (id::fx::grainReverse, "How many grains play backwards.");
         tip (id::fx::grainFeedback, "Feeds the grains back into what they read, for clouds that build up.");
-        tip (id::fx::grainFreeze, "Stops listening and keeps granulating what it already holds.");
+        tip (id::fx::grainRelease, "How long the cloud takes to fade away once the sound stops. "
+                                   "Off leaves it to FEEDBACK; turned all the way up it holds what it has heard, for ever.");
     }
 
     // House-voice tooltips for the two controls the stereo chorus engine

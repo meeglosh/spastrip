@@ -39,6 +39,7 @@
 #include <SPAStripFactoryData.h>
 
 #include "reference/GlitchMultiband.h"
+#include "reference/GrainFX_1_0_2.h"
 
 #if JUCE_MAC
 // libmalloc's (private but long-stable) allocation hook, used by noAllocationTest.
@@ -282,7 +283,8 @@ namespace
         // fxDist..fxGrain; chaos.* and everything else is not an effect). The
         // number was obtained by dumping the synth registry (see report); it is
         // pinned here as a literal.
-        constexpr int kSynthFxParamCount = 159;
+        // 160 since SPASynth 1.0.31 added GRAIN RELEASE (ported here too).
+        constexpr int kSynthFxParamCount = 160;
         // FILTER (added after the port) is new to the strip: enable, routing, filter 1 x5, filter 2 x6.
         constexpr int kFilterParamCount = 13;
         // COMP rebuild: knee / solo / bypass per band, in their own group.
@@ -1380,6 +1382,12 @@ int main (int argc, char** argv)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
+    RUN (fxModuleTests::grainReleaseOffIdenticalTest);
+    RUN (fxModuleTests::grainReleaseDecayTest);
+    RUN (fxModuleTests::grainReleaseInfiniteTest);
+    RUN (fxModuleTests::grainReleaseLegacyFreezeLoadTest);
+    RUN (fxModuleTests::grainReleaseSafetyTest);
+    RUN (fxModuleTests::grainReleaseInjectionTest);
     RUN (fxModuleTests::fxNewModulesOffBypassTest);
     RUN (fxModuleTests::grainBasicsTest);
     RUN (fxModuleTests::grainReverseTest);

@@ -175,7 +175,7 @@ namespace
             setParam (proc, fx::tremStereo, 0.5f); setParam (proc, fx::tremShape, 1);
             setParam (proc, fx::vibEnable, 1); setParam (proc, fx::vibRate, 4.2f); setParam (proc, fx::vibDepth, 0.45f);
         }
-        else if (name == "GRAIN")
+        else if (name == "GRAIN" || name == "GLITTER")
         {
             setParam (proc, fx::grainEnable, 1); setParam (proc, fx::grainSize, 90.0f); setParam (proc, fx::grainDensity, 40.0f);
             setParam (proc, fx::grainPitch, 7.0f); setParam (proc, fx::grainSpread, 0.5f); setParam (proc, fx::grainSpreadPitch, 4.0f);
@@ -254,7 +254,7 @@ int main (int argc, char** argv)
     std::cout << "SPAStripSnapshots -> " << outDir.getFullPathName() << "\n";
 
     const int baseW = spa::ui::metrics::baseWidth, baseH = spa::ui::metrics::baseHeight;
-    const juce::StringArray tabs { "DIST", "CHORUS", "MOD", "TREM/VIB", "GRAIN", "DELAY", "REVERB", "CONV", "EQ", "COMP", "LIMIT", "FILTER" };
+    const juce::StringArray tabs { "DIST", "CHORUS", "MOD", "TREM/VIB", "GLITTER", "DELAY", "REVERB", "CONV", "EQ", "COMP", "LIMIT", "FILTER" };
 
     // ---- (a) default state: nothing enabled, no sidechain bus ------------------
     {

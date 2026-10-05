@@ -259,6 +259,7 @@ namespace id
         inline constexpr const char* grainFeedback = "fxGrain.feedback";
         inline constexpr const char* grainMix      = "fxGrain.mix";
         inline constexpr const char* grainFreeze   = "fxGrain.freeze";
+        inline constexpr const char* grainRelease  = "fxGrain.release";   // SPASynth 1.0.31, replaces FREEZE in the UI
 
         // FILTER (SPAStrip): two filters, Series / Parallel. fxFilter.enable is
         // FILTER 1's own on/off (the module header's first toggle, default OFF
@@ -280,6 +281,13 @@ namespace id
         inline constexpr const char* filter2Mix     = "fxFilter.f2.mix";
     }
 }
+
+// GLITTER RELEASE (ported from SPASynth 1.0.31): stored value is seconds.
+// 0 = off, 0.1..30 s on a log taper, and the top of travel
+// (grainReleaseInfinite) = hold forever. A custom range so the knob has a
+// sticky OFF at the bottom and a sticky infinity at the top.
+inline constexpr float grainReleaseInfinite = 31.0f;
+juce::NormalisableRange<float> grainReleaseRange();
 
 const std::vector<ParamDef>& all();
 const ParamDef* find (const juce::String& paramID);

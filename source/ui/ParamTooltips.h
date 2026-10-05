@@ -142,7 +142,7 @@ inline juce::String tooltipFor (const juce::String& paramID)
         { "fxGrain.reverse",     "Reverse: chance of a grain playing backwards." },
         { "fxGrain.feedback",    "Feedback: feeds the grains back in for evolving textures." },
         { "fxGrain.mix",         "Mix: balance between the dry signal and the grains." },
-        { "fxGrain.freeze",      "Freeze: holds the current audio so the grains keep playing it." },
+        { "fxGrain.release",     "Release: how long the cloud takes to fade away once the sound stops. Off leaves it to Feedback; all the way up holds what it has heard, for ever." },
 
         // Filter
         { "fxFilter.enable",       "Turn the filters on or off." },

@@ -1,15 +1,18 @@
 #pragma once
+// SPAStrip GrainFX as shipped before RELEASE replaced FREEZE, verbatim apart
+// from the namespace and include paths. grainReleaseOffIdenticalTest renders it
+// side by side with the current GrainFX to prove RELEASE off changes nothing.
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
-#include "../params/LfoDivisions.h"
 #include <array>
 #include <atomic>
 #include <cmath>
 #include <vector>
-#include "Telemetry.h"
+#include "../../source/dsp/Telemetry.h"
+#include "../../source/params/LfoDivisions.h"
 
-namespace spa::dsp
+namespace spa::dsp::legacy1030
 {
 
 // GRAIN: a granular delay / texture effect in the spirit of Absynth's
@@ -39,21 +42,6 @@ namespace spa::dsp
 // does not fold the top of the spectrum back below Nyquist (aliasing was
 // what the loop kept re-amplifying).
 //
-// RELEASE (1.0.31) replaces the old FREEZE button. FEEDBACK is a gain PER
-// PASS through the ring and one pass lasts roughly POSITION, so at short
-// positions even 0.9 dies in well under a second. RELEASE is a decay TIME
-// instead: the per-pass gain becomes 10^(-3 T/RT), T = the mean pass time
-// (grain-centre delay, see passSeconds()), RT = RELEASE, so the cloud falls
-// 60 dB in RELEASE seconds whatever POSITION and SIZE are. The loop gain used
-// is max(FEEDBACK gain, RELEASE gain), through the same safety scaling as
-// before; because the pitch attenuation 2^(-maxPitch/36) is applied to the
-// FEEDBACK gain only, the RELEASE gain is a target AFTER attenuation and never
-// reaches 1 (capped at kMaxReleaseGain). A long RELEASE also scales the input
-// injection by sqrt(1 - g^2) so a sustained input does not pile up in the
-// loop and sit on the ceiling limiter. RELEASE at its maximum (infinite) is
-// exactly the old FREEZE: capture enough audible material, then hold.
-// RELEASE = 0 changes nothing (bit-identical to 1.0.30).
-//
 // Geometry: every grain reads at `back` samples behind the write head. A
 // forward grain at rate r moves that distance by (w - r) per sample (w = 1
 // while the ring is being written, 0 while FREEZE holds it), a reversed one
@@ -67,9 +55,6 @@ public:
     static constexpr float maxDensityHz = 400.0f;
     static constexpr float kCeiling = 0.98f;   // wet bus never exceeds this
     static constexpr double bufferSeconds = 8.0;
-    static constexpr float infiniteRelease = 30.5f;    // releaseSec at or above this = hold (FREEZE)
-    static constexpr float minRelease = 0.05f;         // below this RELEASE is off
-    static constexpr float kMaxReleaseGain = 0.9995f;  // per-pass gain never reaches 1 except frozen
 
     struct Params
     {
@@ -86,8 +71,7 @@ public:
         float reverse = 0.0f;        // 0..1 probability a grain plays backwards
         float feedback = 0.0f;       // 0..0.9 wet signal re-written into the ring
         float mix = 0.35f;           // 0..1 linear dry/wet
-        bool freeze = false;         // stop writing, keep granulating what is held (hidden legacy param)
-        float releaseSec = 0.0f;     // 0 = off, ~0.1..30 s to -60 dB, >= infiniteRelease = hold forever
+        bool freeze = false;         // stop writing, keep granulating what is held
     };
 
     void prepare (double sr, int /*maxBlock*/)
@@ -107,8 +91,6 @@ public:
 
         mixSmoothed.reset (sampleRate, 0.02);
         fbSmoothed.reset (sampleRate, 0.02);
-        injSmoothed.reset (sampleRate, 0.02);
-        injSmoothed.setCurrentAndTargetValue (1.0f);
         reset();
     }
 
@@ -128,14 +110,11 @@ public:
         dcX = dcY = { 0.0f, 0.0f };
         lp1 = lp2 = { 0.0f, 0.0f };
         limGain = 1.0f;
-        trackO = trackS = { 0.0f, 0.0f };
         frozen = false;
         wasEnabled = false;
         spawned = 0;
-        limited = 0;
         mixSmoothed.setCurrentAndTargetValue (mixSmoothed.getTargetValue());
         fbSmoothed.setCurrentAndTargetValue (fbSmoothed.getTargetValue());
-        injSmoothed.setCurrentAndTargetValue (injSmoothed.getTargetValue());
     }
 
     void process (juce::AudioBuffer<float>& buffer, const Params& p)
@@ -170,10 +149,9 @@ public:
                 + (double) juce::jlimit (2.0f, 500.0f, p.sizeMs)
                 + 250.0 * (double) juce::jlimit (0.0f, 1.0f, p.spread));
             const int need = (int) juce::jmin (needMs * 0.001 * sampleRate, (double) (ringSize - 64));
-            const bool hold = p.freeze || p.releaseSec >= infiniteRelease;
-            capturing = hold && audible < need;
-            frozen = hold && ! capturing;
-            freezeRequested = hold;
+            capturing = p.freeze && audible < need;
+            frozen = p.freeze && ! capturing;
+            freezeRequested = p.freeze;
         }
 
         mixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, p.mix));
@@ -213,39 +191,15 @@ public:
         // quieter by design, and used to feed back less because of it).
         // Floored at 0.25 so a nearly empty cloud cannot boost without bound.
         const float coherent = 0.5f * overlap * cur.gain;
-        float loopGain = juce::jlimit (0.0f, maxFeedback, p.feedback) * std::exp2 (-maxSt / 36.0f);
-        float injection = 1.0f;
-        bool relActive = false;
-        if (p.releaseSec >= minRelease && p.releaseSec < infiniteRelease)
-        {
-            const float gRel = juce::jmin (kMaxReleaseGain,
-                std::pow (10.0f, -3.0f * passSeconds() / p.releaseSec));
-            if (gRel > loopGain)
-            {
-                loopGain = gRel;
-                relActive = true;
-                injection = std::sqrt (juce::jmax (0.0f, 1.0f - gRel * gRel));
-            }
-        }
-        // In RELEASE mode the tap is normalised by the INSTANTANEOUS window sum
-        // of the grains actually playing (see the sample loop), not by its mean:
-        // Hann grains at a fixed spacing sum to a rippling gain, and a loop
-        // whose peak gain exceeds one never decays however small the mean is.
-        // Normalised per sample, coherent content sees exactly `loopGain` per
-        // pass. The floor keeps a sparse cloud (gaps between grains) from
-        // boosting: there the loop gain is simply lower.
-        releaseMode = relActive;
-        relFloor = 0.5f * coherent;
-        fbSmoothed.setTargetValue (releaseMode ? loopGain
-                                               : loopGain / juce::jmax (0.25f, coherent));
-        injSmoothed.setTargetValue (injection);
+        fbSmoothed.setTargetValue (juce::jlimit (0.0f, maxFeedback, p.feedback)
+                                   * std::exp2 (-maxSt / 36.0f)
+                                   / juce::jmax (0.25f, coherent));
         {
             const float fc = juce::jlimit (2500.0f, 0.4f * sr, 8000.0f * std::exp2 (-0.5f * maxSt / 12.0f));
             lpCoef = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * fc / sr);
             hpCoef = std::exp (-juce::MathConstants<float>::twoPi * 60.0f / sr);
         }
         limRelease = 1.0f - std::exp (-1.0f / (0.04f * sr));
-        trackCoef = 1.0f - std::exp (-1.0f / (0.06f * sr));
 
         auto* l = buffer.getWritePointer (0);
         auto* r = numCh > 1 ? buffer.getWritePointer (1) : nullptr;
@@ -268,7 +222,7 @@ public:
             }
             countdown -= 1.0;
 
-            float wetL = 0.0f, wetR = 0.0f, winL = 0.0f, winR = 0.0f, sqL = 0.0f, sqR = 0.0f;
+            float wetL = 0.0f, wetR = 0.0f;
             for (int gi = 0; gi < numActive;)
             {
                 auto& g = grains[(size_t) gi];
@@ -285,11 +239,6 @@ public:
                 }
                 wetL += gl * w * g.gainL;
                 wetR += gr * w * g.gainR;
-                if (releaseMode)
-                {
-                    winL += w * g.gainL;  sqL += w * g.gainL * gl * gl;
-                    winR += w * g.gainR;  sqR += w * g.gainR * gr * gr;
-                }
 
                 g.readPos += g.step;
                 if (g.readPos >= (double) sz) g.readPos -= (double) sz;
@@ -311,13 +260,11 @@ public:
                 const float pk = std::max (std::abs (wetL), std::abs (wetR));
                 const float target = pk > kCeiling ? kCeiling / pk : 1.0f;
                 limGain = target < limGain ? target : limGain + (1.0f - limGain) * limRelease;
-                if (limGain < 0.999f) ++limited;
                 wetL = softClip (wetL * limGain);
                 wetR = softClip (wetR * limGain);
             }
 
             const float fb = fbSmoothed.getNextValue();
-            const float inj = injSmoothed.getNextValue();
             const float mix = mixSmoothed.getNextValue();
 
             if (! frozen)
@@ -327,16 +274,10 @@ public:
 
                 // High-pass (DC / rumble), then a 2-pole low-pass: what is
                 // fed back gets darker every pass.
-                float tapL = wetL, tapR = wetR;
-                if (releaseMode)
-                {
-                    tapL = releaseTap (0, wetL, winL, sqL);
-                    tapR = releaseTap (1, wetR, winR, sqR);
-                }
-                float fbL = feedbackFilter (0, tapL * fb);
-                float fbR = feedbackFilter (1, tapR * fb);
-                const float sL = (std::abs (inL) < 1.0e6f) ? inL * inj : 0.0f;
-                const float sR = (std::abs (inR) < 1.0e6f) ? inR * inj : 0.0f;
+                float fbL = feedbackFilter (0, wetL * fb);
+                float fbR = feedbackFilter (1, wetR * fb);
+                const float sL = (std::abs (inL) < 1.0e6f) ? inL : 0.0f;
+                const float sR = (std::abs (inR) < 1.0e6f) ? inR : 0.0f;
                 ringL[writeIdx] = flush (sL + fbL);
                 ringR[writeIdx] = flush (sR + fbR);
                 if (++writeIdx >= sz) writeIdx = 0;
@@ -398,7 +339,6 @@ public:
     }
 
     static constexpr float maxFeedback = 0.9f;
-    std::uint64_t limitedSamples() const { return limited; }
 
 private:
     struct Grain
@@ -513,41 +453,6 @@ private:
         slot->pan = pan;
     }
 
-    // Mean time one trip through the ring takes, in seconds: the delay at a
-    // grain's CENTRE (POSITION plus the mean SPREAD TIME offset), floored by
-    // what spawn()'s geometry allows (a pitched grain needs half its drift
-    // length of extra room). Uses the per-block values in `cur`.
-    float passSeconds() const
-    {
-        const double rate = std::pow (2.0, (double) (std::abs (cur.pitch) + 0.5f * cur.spreadPitch) / 12.0);
-        const double drift = 0.5 * (double) cur.lenSamples * std::abs (rate - 1.0);
-        const double centre = (double) cur.backSamples + 0.125 * sampleRate * (double) cur.spread;
-        const double d = juce::jmax (centre, 6.0 + drift);
-        return (float) juce::jmax (0.001, d / sampleRate);
-    }
-
-    // RELEASE-mode feedback tap. The wet bus is divided by the instantaneous
-    // window sum, so grains that read the SAME audio (SPREAD 0, plain delay)
-    // feed back exactly the loop gain asked for. Grains that read DIFFERENT
-    // audio (SPREAD TIME, reverse, pitch scatter) average to less power than
-    // any one of them, so the cloud would die faster than RELEASE says: a slow
-    // power tracker compares the tap's power with the mean power of what the
-    // grains read and makes the difference up (never more than 4x amplitude),
-    // which holds the per-pass POWER gain at the target for any cloud.
-    float releaseTap (int ch, float wet, float winSum, float sqSum)
-    {
-        const float d = juce::jmax (relFloor, winSum);
-        const float tap = wet / d;
-        const float src = sqSum / d;
-        auto& o = trackO[(size_t) ch];
-        auto& sq = trackS[(size_t) ch];
-        o += trackCoef * (tap * tap - o);
-        sq += trackCoef * (src - sq);
-        o = flush (o); sq = flush (sq);
-        const float boost = std::sqrt ((sq + 1.0e-12f) / (o + 1.0e-12f));
-        return tap * juce::jlimit (1.0f, 4.0f, boost);
-    }
-
     float windowAt (float age) const
     {
         const float x = age * (float) windowSize;
@@ -619,21 +524,16 @@ private:
     double countdown = 0.0;
     std::uint32_t rng = 0x9E3779B9u;
     std::uint64_t spawned = 0;
-    std::uint64_t limited = 0;   // samples spent in ceiling-limiter gain reduction (test observation)
     std::array<float, 2> dcX {}, dcY {}, lp1 {}, lp2 {};
     float lpCoef = 0.5f, hpCoef = 0.995f;
     float limGain = 1.0f, limRelease = 0.001f;
-    bool releaseMode = false;
-    std::array<float, 2> trackO {}, trackS {};
-    float trackCoef = 0.0004f;
-    float relFloor = 0.25f;
     int numActive = 0;
     float lastSemis = 0.0f;
     double lastBack = 0.0;
 
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoothed, fbSmoothed, injSmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoothed, fbSmoothed;
 
     JUCE_LEAK_DETECTOR (GrainFX)
 };
 
-} // namespace spa::dsp
+} // namespace spa::dsp::legacy1030

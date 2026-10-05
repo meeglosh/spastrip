@@ -41,6 +41,33 @@ namespace
         }
     }
 
+    // GLITTER's FREEZE button became RELEASE (infinite = hold), as in SPASynth
+    // 1.0.31. A state that carries fxGrain.freeze = on but no fxGrain.release
+    // comes from an older build: it loads as RELEASE infinite, so the knob
+    // shows what holds. Runs before fillMissingParamsWithDefaults.
+    void migrateGrainFreeze (juce::ValueTree& state)
+    {
+        const juce::String freezeId = params::id::fx::grainFreeze, releaseId = params::id::fx::grainRelease;
+        bool freezeOn = false;
+        for (int i = 0; i < state.getNumChildren(); ++i)
+        {
+            const auto child = state.getChild (i);
+            if (! child.hasType ("PARAM"))
+                continue;
+            const auto cid = child.getProperty ("id").toString();
+            if (cid == releaseId)
+                return;
+            if (cid == freezeId)
+                freezeOn = (double) child.getProperty ("value") >= 0.5;
+        }
+        if (! freezeOn)
+            return;
+        juce::ValueTree migrated ("PARAM");
+        migrated.setProperty ("id", releaseId, nullptr);
+        migrated.setProperty ("value", (double) params::grainReleaseInfinite, nullptr);
+        state.appendChild (migrated, nullptr);
+    }
+
     juce::String modSlotStateKey (int slot)
     {
         return "modSlot" + juce::String (slot + 1) + "Target";
@@ -224,6 +251,7 @@ SPAStripProcessor::SPAStripProcessor()
     bind (r.grainFeedback, fx::grainFeedback);
     bind (r.grainMix, fx::grainMix);
     r.grainFreeze = rp (fx::grainFreeze);
+    r.grainRelease = rp (fx::grainRelease);
 
     // SPAStripAdded: FILTER.
     r.filterEnable = rp (fx::filterEnable);
@@ -1131,6 +1159,7 @@ void SPAStripProcessor::updateFXParams()
     p.grainFeedback    = rf.grainFeedback.get();
     p.grainMix         = rf.grainMix.get();
     p.grainFreeze      = rf.grainFreeze->load() >= 0.5f;
+    p.grainReleaseSec  = rf.grainRelease->load();
 
     // SPAStripAdded: FILTER.
     p.filterEnable     = rf.filterEnable->load() >= 0.5f;
@@ -1448,6 +1477,7 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming, bool 
     state.removeProperty (kPresetEditedProperty, nullptr);
     for (auto child = state.getChildWithName (kIRChildType); child.isValid(); child = state.getChildWithName (kIRChildType))
         state.removeChild (child, nullptr);
+    migrateGrainFreeze (state);
     fillMissingParamsWithDefaults (state);
 
     {

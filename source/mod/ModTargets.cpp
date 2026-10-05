@@ -35,6 +35,10 @@ namespace
               "tank lengths." },
             { fx::reverbPreDelay, intDelay },
             { fx::convPreDelay,   intDelay },
+            { fx::grainRelease,
+              "A decay time whose top of travel is a hold (FREEZE): modulation across that point "
+              "would switch the cloud in and out of hold, and below it the loop gain is set once per "
+              "block. Not a mod destination in SPASynth either." },
         };
     }
 

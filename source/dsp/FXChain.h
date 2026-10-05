@@ -227,6 +227,7 @@ public:
         float grainFeedback = 0.0f;
         float grainMix = 0.35f;
         bool grainFreeze = false;
+        float grainReleaseSec = 0.0f;     // GLITTER RELEASE: 0 off, >= GrainFX::infiniteRelease holds
 
         // SPAStripAdded: FILTER, two SVF filters (Series / Parallel). filterEnable
         // is FILTER 1's switch (the module's own enable); filter 2 has its own.

@@ -59,6 +59,31 @@ static juce::NormalisableRange<float> skewedRange (float min, float max, float c
     return r;
 }
 
+juce::NormalisableRange<float> grainReleaseRange()
+{
+    // normalised: [0, 0.03] = off, (0.03, 0.97) = 0.1..30 s (log), [0.97, 1] = infinite
+    constexpr float lo = 0.03f, hi = 0.97f, minS = 0.1f, maxS = 30.0f;
+    const auto from0to1 = [] (float, float, float n)
+    {
+        if (n <= lo) return 0.0f;
+        if (n >= hi) return grainReleaseInfinite;
+        return minS * std::pow (maxS / minS, (n - lo) / (hi - lo));
+    };
+    const auto to0to1 = [] (float, float, float v)
+    {
+        if (v < 0.05f) return 0.0f;
+        if (v >= 30.5f) return 1.0f;
+        return lo + (hi - lo) * std::log (juce::jlimit (minS, maxS, v) / minS) / std::log (maxS / minS);
+    };
+    const auto snap = [] (float, float, float v)
+    {
+        if (v < 0.05f) return 0.0f;
+        if (v >= 30.5f) return grainReleaseInfinite;
+        return juce::jlimit (minS, maxS, v);
+    };
+    return { 0.0f, grainReleaseInfinite, from0to1, to0to1, snap };
+}
+
 static std::vector<ParamDef> buildDefs()
 {
     std::vector<ParamDef> p;
@@ -494,6 +519,9 @@ static std::vector<ParamDef> buildDefs()
     p.push_back ({ fx::grainMix, "Glitter Mix", Section::fxGrain,
                    ParamKind::floatParam, { 0.0f, 1.0f }, 0.35f, "",
                    { .enabled = true, .minNorm = 0.15f, .maxNorm = 0.5f }, {}, true });
+    // FREEZE stays registered (sessions and host automation reference it) but
+    // has no control any more: RELEASE at infinity is the same hold, and a
+    // state that carries freeze = on loads as RELEASE infinite (restoreStateTree).
     p.push_back ({ fx::grainFreeze, "Glitter Freeze", Section::fxGrain,
                    ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
 
@@ -592,6 +620,14 @@ static std::vector<ParamDef> buildDefs()
         }
     }
 
+    // GLITTER RELEASE (SPASynth 1.0.31's approach): how long the cloud takes
+    // to die away after the input stops; the top of the knob holds it forever.
+    // Appended last so no existing RANDOMIZE draw moves; rolls stay <= ~5 s and
+    // are never infinite. Not a mod destination.
+    p.push_back ({ id::fx::grainRelease, "Glitter Release", Section::fxGrain,
+                   ParamKind::floatParam, grainReleaseRange(), 0.0f, "",
+                   { .enabled = true, .maxNorm = 0.7f, .biasCentre = 0.0f, .biasStrength = 0.5f } });
+
     return p;
 }
 
@@ -650,6 +686,30 @@ static std::unique_ptr<juce::RangedAudioParameter> makeParameter (const ParamDef
         return juce::String (value, magnitude >= 1000.0f ? 0
                                   : magnitude >= 100.0f ? 1 : 2);
     };
+
+    if (def.id == id::fx::grainRelease)
+    {
+        // "Off", "0.35 s", "12.0 s", infinity glyph at the top. The unit is
+        // part of the text so the glyph does not read "inf s".
+        const auto formatRelease = [] (float v, int)
+        {
+            if (v < 0.05f) return juce::String ("Off");
+            if (v >= 30.5f) return juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x9e"));
+            return juce::String (v, v >= 10.0f ? 1 : 2) + " s";
+        };
+        const auto parseRelease = [] (const juce::String& text)
+        {
+            const auto t = text.trim().toLowerCase();
+            if (t.startsWith ("off") || t.isEmpty()) return 0.0f;
+            if (t.contains ("inf") || t.contains (juce::String (juce::CharPointer_UTF8 ("\xe2\x88\x9e"))))
+                return grainReleaseInfinite;
+            return t.retainCharacters ("0123456789.").getFloatValue();
+        };
+        return std::make_unique<juce::AudioParameterFloat> (
+            pid, def.name, def.range, def.defaultValue,
+            juce::AudioParameterFloatAttributes().withStringFromValueFunction (formatRelease)
+                .withValueFromStringFunction (parseRelease));
+    }
 
     if (def.percentDisplay)
     {

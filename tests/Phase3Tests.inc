@@ -512,8 +512,10 @@ namespace phase3Tests
         const auto controlled = ed->getContent().collectControlledParameterIDs();
 
         juce::StringArray missing;
+        // GLITTER's legacy FREEZE stays registered for old sessions / automation but has
+        // no control on purpose: RELEASE at infinity replaced it (as in SPASynth).
         for (const auto& def : spa::params::all())
-            if (! controlled.contains (def.id))
+            if (! controlled.contains (def.id) && def.id != fx::grainFreeze)
                 missing.add (def.id);
 
         // The only parameters with no widget of their own are the 8 EQ bands' parameters (the EQ

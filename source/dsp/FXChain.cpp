@@ -142,6 +142,9 @@ double FXChain::tailSeconds (const Params& p) const
                            ? std::log (0.001) / std::log ((double) p.grainFeedback)
                            : 1.0;
         tail = juce::jmax (tail, juce::jlimit (0.0, 12.0, reach * repeats));
+        // RELEASE rings out for its own time (infinite = held = the same cap).
+        if (p.grainReleaseSec >= GrainFX::minRelease)
+            tail = juce::jmax (tail, juce::jlimit (0.0, 12.0, reach + (double) p.grainReleaseSec));
     }
 
     return tail;
@@ -451,6 +454,7 @@ void FXChain::processGrain (juce::AudioBuffer<float>& buffer, const Params& p)
     gp.feedback   = p.grainFeedback;
     gp.mix        = p.grainMix;
     gp.freeze     = p.grainFreeze;
+    gp.releaseSec = p.grainReleaseSec;
     grainEffect.process (buffer, gp);
 }
 

@@ -378,9 +378,9 @@ namespace phase2Tests
 
         // Existing FX parameters are untouched: the ported FX count is still the synth's 159;
         // the FILTER module adds its own 13 on top.
-        expect (params::numFxParams() == 159 + 13 + 9, "FX parameter count is the ported 159 plus 13 FILTER and 9 COMP band parameters");
+        expect (params::numFxParams() == 160 + 13 + 9, "FX parameter count is the ported 160 plus 13 FILTER and 9 COMP band parameters");
         Proc proc;
-        expect (proc.getParameters().size() == 159 + 13 + 9 + 4 + 6 + 8, "host sees 159 + 13 + 9 FX + 4 global + 6 sidechain + 8 slot-depth parameters");
+        expect (proc.getParameters().size() == 160 + 13 + 9 + 4 + 6 + 8, "host sees 160 + 13 + 9 FX + 4 global + 6 sidechain + 8 slot-depth parameters");
         // Slot targets are not host parameters.
         bool anyTarget = false;
         for (auto* p : proc.getParameters())
