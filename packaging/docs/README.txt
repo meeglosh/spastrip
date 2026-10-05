@@ -30,8 +30,10 @@ SYSTEM REQUIREMENTS
 INSTALLING THE PLUG-IN
 ----------------------
 macOS:   open the .pkg and follow the installer. You can choose to install
-         the Audio Unit, the VST3, or both. It installs:
+         the Audio Unit, the Audio Unit (MIDI), the VST3, or any of them.
+         It installs:
            /Library/Audio/Plug-Ins/Components/SPAStrip.component
+           /Library/Audio/Plug-Ins/Components/SPAStrip MIDI.component
            /Library/Audio/Plug-Ins/VST3/SPAStrip.vst3
            /Library/Application Support/Silverplatter Audio/SPAStrip/
                (README.txt, QUICKSTART.txt, EULA.txt, CREDITS.txt)
@@ -48,6 +50,24 @@ manual for where that is).
 
 Uninstalling: on Windows use "Apps" in Settings. On macOS there is no
 uninstaller; delete the files listed above.
+
+MIDI LEARN
+----------
+Right-click any knob, switch or menu and choose MIDI Learn, then move a
+control on your MIDI controller: from then on it moves that parameter.
+Right-click again to remove the assignment. Your assignments are saved with
+your DAW session (not in presets). On an EQ point, the right-click menu has a
+MIDI Learn submenu for its frequency, gain and Q.
+
+MIDI Learn needs MIDI to reach the plug-in:
+  VST3 (Ableton Live, Cubase, Bitwig, Reaper, FL Studio ...): route a MIDI
+    track or your controller to SPAStrip, as your DAW's manual describes.
+  Logic Pro: use "SPAStrip MIDI", found under Audio Units > MIDI-controlled
+    Effects (Silverplatter Audio), then pick your MIDI source in the
+    side-chain MIDI menu at the top of the plug-in window. The regular
+    SPAStrip Audio Unit cannot receive MIDI in Logic, so it has no MIDI
+    Learn; your DAW's own controller mapping works on every parameter of
+    both.
 
 FACTORY IMPULSE RESPONSES AND CREDITS
 -------------------------------------

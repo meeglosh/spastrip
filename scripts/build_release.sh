@@ -193,10 +193,10 @@ verify_release() {   # <version>
     pkgutil --expand-full "$pkg" "$x/pkg"
     local comp bundle fmt bin plist pdir archs minos sv bv id
     local ids=()
-    for comp in AU:SPAStrip.component VST3:SPAStrip.vst3; do
+    for comp in "AU:SPAStrip.component" "VST3:SPAStrip.vst3" "AUMIDI:SPAStrip MIDI.component"; do
         fmt="${comp%%:*}"; bundle="${comp#*:}"
         pdir="$x/pkg/SPAStrip${fmt}.pkg/Payload"
-        bin="$pdir/$bundle/Contents/MacOS/SPAStrip"
+        bin="$pdir/$bundle/Contents/MacOS/${bundle%.*}"
         plist="$pdir/$bundle/Contents/Info.plist"
         [[ -f "$bin" ]] || { fail "$fmt binary missing from the payload"; continue; }
         archs=$(lipo -archs "$bin")
@@ -218,7 +218,8 @@ verify_release() {   # <version>
                 || fail "$fmt is not Developer ID signed with the hardened runtime"
         fi
     done
-    (( ${#ids} == 2 )) && [[ "${ids[1]}" != "${ids[2]}" ]] || fail "AU and VST3 bundle identifiers are not distinct"
+    (( ${#ids} == 3 )) && [[ "${ids[1]}" != "${ids[2]}" && "${ids[1]}" != "${ids[3]}" && "${ids[2]}" != "${ids[3]}" ]] \
+        || fail "AU, VST3 and MIDI AU bundle identifiers are not distinct"
     local d="$x/pkg/SPAStripDocs.pkg/Payload/Library/Application Support/Silverplatter Audio/SPAStrip"
     echo "  docs payload: $(ls "$d" | tr '\n' ' ')"
     grep -q 'CC BY 4.0' "$d/CREDITS.txt" || fail "CREDITS.txt in the docs payload has no CC BY attribution"
@@ -265,7 +266,7 @@ echo "commit: $(git rev-parse HEAD)  branch: $(git branch --show-current)"
 # user domain over the system domain (/Library, where the installer puts the
 # release), so a leftover dev copy silently shadows every signed install in
 # every DAW. SPASynth hit this repeatedly; clearing is automatic here.
-SHADOWS=("$HOME/Library/Audio/Plug-Ins/Components/SPAStrip.component" "$HOME/Library/Audio/Plug-Ins/VST3/SPAStrip.vst3")
+SHADOWS=("$HOME/Library/Audio/Plug-Ins/Components/SPAStrip.component" "$HOME/Library/Audio/Plug-Ins/Components/SPAStrip MIDI.component" "$HOME/Library/Audio/Plug-Ins/VST3/SPAStrip.vst3")
 for s in $SHADOWS; do
     if [[ "$DRY_RUN" == 1 ]]; then
         [[ -e "$s" ]] && echo "DRY RUN: would remove dev shadow copy $s" || echo "DRY RUN: no dev shadow copy at $s"
@@ -289,11 +290,12 @@ cmake -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DSPASTRIP_REQUIRE_LICENSING=ON \
       -DSPASTRIP_SPA_LICENSING_DIR="$REPO_ROOT/libs/spa-licensing" \
       -DSPASTRIP_LICENSING_API_URL=
-cmake --build "$BUILD" --target SPAStrip_AU SPAStrip_VST3 SPAStripTests
+cmake --build "$BUILD" --target SPAStrip_AU SPAStrip_VST3 SPAStripMIDI_AU SPAStripTests
 
 ART="$BUILD/SPAStrip_artefacts/Release"
 [[ -d "$ART/AU/SPAStrip.component" ]] || die "SPAStrip.component was not built"
 [[ -d "$ART/VST3/SPAStrip.vst3" ]]    || die "SPAStrip.vst3 was not built"
+[[ -d "$BUILD/SPAStripMIDI_artefacts/Release/AU/SPAStrip MIDI.component" ]] || die "SPAStrip MIDI.component was not built"
 TESTS="$BUILD/SPAStripTests_artefacts/Release/SPAStripTests"
 [[ -x "$TESTS" ]] || die "SPAStripTests was not built"
 

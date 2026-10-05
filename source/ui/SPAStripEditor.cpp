@@ -250,6 +250,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     fxTabs.getTabbedButtonBar().addChangeListener (this);
     processor.getUndoBroadcaster().addChangeListener (this);
     processor.getPresetManager().addChangeListener (this);
+    processor.getMidiLearn().addChangeListener (this);
 
 #if SPASTRIP_HAS_SPA_LICENSING
     // Licensing: brand-band badge, the logo menu's Licence..., and the
@@ -291,6 +292,7 @@ ContentComponent::~ContentComponent()
     fxTabs.getTabbedButtonBar().removeChangeListener (this);
     processor.getUndoBroadcaster().removeChangeListener (this);
     processor.getPresetManager().removeChangeListener (this);
+    processor.getMidiLearn().removeChangeListener (this);
 #if SPASTRIP_HAS_SPA_LICENSING
     processor.getLicenceBroadcaster().removeChangeListener (this);
     processor.getPresetManager().onSaveBlocked = nullptr;
@@ -319,6 +321,11 @@ void ContentComponent::updateActive()
 
 void ContentComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == &processor.getMidiLearn())
+    {
+        updateMidiLearnStatus();
+        return;
+    }
     if (source == &fxTabs.getTabbedButtonBar())
     {
         tabChanged();
@@ -338,6 +345,13 @@ void ContentComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
 void ContentComponent::timerCallback()
 {
+    if (midiLearnStatusUntilMs != 0 && juce::Time::getMillisecondCounter() > midiLearnStatusUntilMs)
+    {
+        midiLearnStatus = {};
+        midiLearnStatusUntilMs = 0;
+        repaint();
+    }
+
     // Everything the processor can change without a broadcast: host state restore,
     // randomize, locks, WILD, the accent changed by another editor instance.
     syncTabOrder();
@@ -473,34 +487,95 @@ void ContentComponent::tabChanged()
 }
 
 //==============================================================================
-void ContentComponent::showModAssignMenu (juce::Slider& slider, const juce::String& paramID)
+juce::PopupMenu ContentComponent::buildParameterMenu (const juce::String& paramID)
 {
-    juce::ignoreUnused (slider);
-    if (mod::indexOf (paramID) < 0)
-        return;   // not a modulation target: no menu
-
     juce::PopupMenu menu;
-    menu.addSectionHeader ("MODULATE  " + modmenu::shortName (paramID).toUpperCase());
-    for (int s = 0; s < SPAStripProcessor::numModSlots; ++s)
+    auto* param = processor.getAPVTS().getParameter (paramID);
+    if (param == nullptr)
+        return menu;
+
+    if (processor.supportsMidiLearn())
     {
-        const auto current = processor.getModSlotTarget (s);
-        if (current == paramID)
-            menu.addItem (100 + s, "Remove from slot " + juce::String (s + 1));
+        auto& learn = processor.getMidiLearn();
+        const auto cc = learn.getAssignedCC (paramID);
+        menu.addSectionHeader ("MIDI  " + param->getName (40).toUpperCase());
+        if (learn.isArmed() && learn.getArmedParamID() == paramID)
+            menu.addItem (3, "Cancel MIDI Learn (move a hardware control...)");
         else
+            menu.addItem (1, cc >= 0 ? "MIDI Learn (now CC " + juce::String (cc) + ")" : juce::String ("MIDI Learn"));
+        if (cc >= 0)
+            menu.addItem (2, "Remove MIDI assignment (CC " + juce::String (cc) + ")");
+    }
+
+    if (mod::indexOf (paramID) >= 0)
+    {
+        menu.addSectionHeader ("MODULATE  " + modmenu::shortName (paramID).toUpperCase());
+        for (int s = 0; s < SPAStripProcessor::numModSlots; ++s)
         {
-            juce::String text = "Assign to mod slot " + juce::String (s + 1);
-            if (current.isNotEmpty())
-                text += "  (replaces " + modmenu::shortName (current) + ")";
-            menu.addItem (1 + s, text);
+            const auto current = processor.getModSlotTarget (s);
+            if (current == paramID)
+                menu.addItem (201 + s, "Remove from slot " + juce::String (s + 1));
+            else
+            {
+                juce::String text = "Assign to mod slot " + juce::String (s + 1);
+                if (current.isNotEmpty())
+                    text += "  (replaces " + modmenu::shortName (current) + ")";
+                menu.addItem (101 + s, text);
+            }
         }
     }
+    return menu;
+}
+
+void ContentComponent::showParameterMenu (juce::Component&, const juce::String& paramID)
+{
+    auto menu = buildParameterMenu (paramID);
+    if (menu.getNumItems() == 0)
+        return;   // nothing to offer (not a mod target, and no MIDI in this build)
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
                         [safe = juce::Component::SafePointer<ContentComponent> (this), paramID] (int result)
                         {
-                            if (safe == nullptr || result <= 0)
-                                return;
-                            safe->toggleModAssignment (paramID, result >= 100 ? result - 100 : result - 1);
+                            if (safe != nullptr)
+                                safe->applyParameterMenuResult (result, paramID);
                         });
+}
+
+void ContentComponent::applyParameterMenuResult (int result, const juce::String& paramID)
+{
+    auto& learn = processor.getMidiLearn();
+    if (result == 1)       learn.armLearn (paramID);
+    else if (result == 2)  learn.clearAssignment (paramID);
+    else if (result == 3)  learn.cancelLearn();
+    else if (result >= 101 && result < 101 + SPAStripProcessor::numModSlots)
+        toggleModAssignment (paramID, result - 101);
+    else if (result >= 201 && result < 201 + SPAStripProcessor::numModSlots)
+        toggleModAssignment (paramID, result - 201);
+}
+
+void ContentComponent::updateMidiLearnStatus()
+{
+    auto& learn = processor.getMidiLearn();
+    const auto nameOf = [this] (const juce::String& pid)
+    {
+        auto* p = processor.getAPVTS().getParameter (pid);
+        return p != nullptr ? p->getName (40) : pid;
+    };
+    if (learn.isArmed())
+    {
+        midiLearnLastArmed = learn.getArmedParamID();
+        midiLearnStatus = "MIDI LEARN: move a control for " + nameOf (midiLearnLastArmed).toUpperCase();
+        midiLearnStatusUntilMs = 0;
+    }
+    else if (midiLearnLastArmed.isNotEmpty())
+    {
+        // Just captured (or cancelled): say which CC, briefly.
+        const auto cc = learn.getAssignedCC (midiLearnLastArmed);
+        midiLearnStatus = cc >= 0 ? "CC " + juce::String (cc) + "  >  " + nameOf (midiLearnLastArmed).toUpperCase()
+                                  : juce::String();
+        midiLearnStatusUntilMs = juce::Time::getMillisecondCounter() + 3000;
+        midiLearnLastArmed = {};
+    }
+    repaint();
 }
 
 void ContentComponent::toggleModAssignment (const juce::String& paramID, int slot)
@@ -926,7 +1001,14 @@ void ContentComponent::paint (juce::Graphics& g)
                 juce::Justification::centredRight);
     g.setColour (juce::Colour (0xffe7ecef).withAlpha (0.8f));
     g.setFont (metrics::labelFont());
-    g.drawText ("SPAStrip", footer, juce::Justification::centred);
+    if (midiLearnStatus.isNotEmpty())
+    {
+        g.setColour (t.assignSelected);
+        g.setFont (metrics::smallFontBold());
+        g.drawText (midiLearnStatus, footer.reduced (160, 0), juce::Justification::centred);
+    }
+    else
+        g.drawText ("SPAStrip", footer, juce::Justification::centred);
 
     // Hint in the empty right end of the tab strip.
     if (! tabHintRect.isEmpty())

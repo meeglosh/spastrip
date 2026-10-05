@@ -79,7 +79,7 @@ SectionPanel::SectionPanel (juce::AudioProcessorValueTreeState& apvts,
         {
             case params::ParamKind::boolParam:
             {
-                auto toggle = std::make_unique<juce::ToggleButton> (displayName (def).toUpperCase());
+                auto toggle = std::make_unique<ParamToggleButton> (displayName (def).toUpperCase());
                 control.buttonAttachment =
                     std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
                         apvts, def.id, *toggle);
@@ -91,7 +91,7 @@ SectionPanel::SectionPanel (juce::AudioProcessorValueTreeState& apvts,
             }
             case params::ParamKind::choiceParam:
             {
-                auto combo = std::make_unique<juce::ComboBox>();
+                auto combo = std::make_unique<ParamComboBox>();
                 combo->addItemList (def.choices, 1);
                 control.comboAttachment =
                     std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (

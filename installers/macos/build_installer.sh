@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Builds the macOS installer package for SPAStrip (AU + VST3, no Standalone).
+# Builds the macOS installer package for SPAStrip (AU + VST3 + the "SPAStrip MIDI"
+# AU, no Standalone).
 #
 #   ./installers/macos/build_installer.sh <build dir> <output dir>
 #
@@ -30,8 +31,9 @@ VERSION=$(sed -n 's/^project(SPAStrip VERSION \([0-9.]*\).*/\1/p' "$REPO_ROOT/CM
 [[ -n "$VERSION" ]] || { echo "error: could not read the version from CMakeLists.txt" >&2; exit 1; }
 ARTEFACTS="$BUILD_DIR/SPAStrip_artefacts/Release"
 
-[[ -d "$ARTEFACTS/VST3/SPAStrip.vst3" && -d "$ARTEFACTS/AU/SPAStrip.component" ]] \
-    || { echo "error: no Release AU/VST3 artefacts in $BUILD_DIR (build SPAStrip_AU SPAStrip_VST3)" >&2; exit 1; }
+MIDI_ARTEFACTS="$BUILD_DIR/SPAStripMIDI_artefacts/Release"
+[[ -d "$ARTEFACTS/VST3/SPAStrip.vst3" && -d "$ARTEFACTS/AU/SPAStrip.component" && -d "$MIDI_ARTEFACTS/AU/SPAStrip MIDI.component" ]] \
+    || { echo "error: no Release AU/VST3/MIDI AU artefacts in $BUILD_DIR (build SPAStrip_AU SPAStrip_VST3 SPAStripMIDI_AU)" >&2; exit 1; }
 mkdir -p "$OUT_DIR"
 OUT_DIR="${OUT_DIR:A}"
 
@@ -91,6 +93,9 @@ build_component_pkg "$ARTEFACTS/VST3/SPAStrip.vst3" \
 build_component_pkg "$ARTEFACTS/AU/SPAStrip.component" \
     "com.silverplatteraudio.spastrip.au" "/Library/Audio/Plug-Ins/Components" \
     "$WORK/packages/SPAStripAU.pkg"
+build_component_pkg "$MIDI_ARTEFACTS/AU/SPAStrip MIDI.component" \
+    "com.silverplatteraudio.spastripmidi.au" "/Library/Audio/Plug-Ins/Components" \
+    "$WORK/packages/SPAStripAUMIDI.pkg"
 
 # --- Docs package -------------------------------------------------------------
 # README, QUICKSTART, EULA and CREDITS.txt (the factory impulse response
@@ -114,8 +119,9 @@ cat > "$WORK/resources/welcome.html" <<HTML
 <body style="font-family: -apple-system;">
 <h2>SPAStrip $VERSION</h2>
 <p>Silverplatter Audio</p>
-<p>This installs the SPAStrip effect plug-in as an Audio Unit and a VST3.
-Use Customize to choose formats.</p>
+<p>This installs the SPAStrip effect plug-in as an Audio Unit and a VST3, plus
+"SPAStrip MIDI", an Audio Unit that Logic can send MIDI to (for MIDI Learn; in Logic
+it is under Audio Units &gt; MIDI-controlled Effects). Use Customize to choose formats.</p>
 <p>Quit your DAW before continuing, then start it again afterwards.</p>
 </body></html>
 HTML
@@ -161,12 +167,17 @@ cat > "$WORK/distribution.xml" <<XML
     <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
     <choices-outline>
         <line choice="au"/>
+        <line choice="aumidi"/>
         <line choice="vst3"/>
         <line choice="docs"/>
     </choices-outline>
     <choice id="au" title="Audio Unit" description="For Logic Pro and other AU hosts."
             start_selected="true">
         <pkg-ref id="com.silverplatteraudio.spastrip.au"/>
+    </choice>
+    <choice id="aumidi" title="Audio Unit (MIDI)" description="SPAStrip MIDI: the same plug-in as an Audio Unit Logic can send MIDI to, for MIDI Learn. In Logic: Audio Units &gt; MIDI-controlled Effects."
+            start_selected="true">
+        <pkg-ref id="com.silverplatteraudio.spastripmidi.au"/>
     </choice>
     <choice id="vst3" title="VST3" description="For Ableton Live, Cubase, Reaper, FL Studio and other VST3 hosts."
             start_selected="true">
@@ -178,6 +189,7 @@ cat > "$WORK/distribution.xml" <<XML
         <pkg-ref id="com.silverplatteraudio.spastrip.docs"/>
     </choice>
     <pkg-ref id="com.silverplatteraudio.spastrip.au" version="$VERSION" onConclusion="none">SPAStripAU.pkg</pkg-ref>
+    <pkg-ref id="com.silverplatteraudio.spastripmidi.au" version="$VERSION" onConclusion="none">SPAStripAUMIDI.pkg</pkg-ref>
     <pkg-ref id="com.silverplatteraudio.spastrip.vst3" version="$VERSION" onConclusion="none">SPAStripVST3.pkg</pkg-ref>
     <pkg-ref id="com.silverplatteraudio.spastrip.docs" version="$VERSION" onConclusion="none">SPAStripDocs.pkg</pkg-ref>
 </installer-gui-script>

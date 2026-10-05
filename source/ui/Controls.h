@@ -13,7 +13,9 @@ class ModAssignHost
 {
 public:
     virtual ~ModAssignHost() = default;
-    virtual void showModAssignMenu (juce::Slider&, const juce::String& paramID) = 0;
+    // The right-click menu of a parameter control: MIDI Learn (where the build
+    // can receive MIDI) and modulation-slot assignment (for mod targets).
+    virtual void showParameterMenu (juce::Component&, const juce::String& paramID) = 0;
 };
 
 // A rotary juce::Slider that turns a right-click (context-menu click) into a
@@ -32,7 +34,7 @@ public:
         {
             contextClick = true;
             if (auto* host = findParentComponentOfClass<ModAssignHost>())
-                host->showModAssignMenu (*this, getProperties()["paramID"].toString());
+                host->showParameterMenu (*this, getProperties()["paramID"].toString());
             return;
         }
         contextClick = false;
@@ -44,6 +46,41 @@ public:
 
 private:
     bool contextClick = false;
+};
+
+// The toggle and combo every parameter switch / menu uses: a right-click opens
+// the parameter menu (ModAssignHost) instead of toggling / opening the list.
+// (A plain juce::Button toggles on any mouse button.)
+class ParamToggleButton : public juce::ToggleButton
+{
+public:
+    using juce::ToggleButton::ToggleButton;
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        contextClick = e.mods.isPopupMenu();
+        if (! contextClick) { juce::ToggleButton::mouseDown (e); return; }
+        if (auto* host = findParentComponentOfClass<ModAssignHost>())
+            host->showParameterMenu (*this, getProperties()["paramID"].toString());
+    }
+    void mouseDrag (const juce::MouseEvent& e) override { if (! contextClick) juce::ToggleButton::mouseDrag (e); }
+    void mouseUp (const juce::MouseEvent& e) override   { if (! contextClick) juce::ToggleButton::mouseUp (e); contextClick = false; }
+private:
+    bool contextClick = false;
+};
+
+class ParamComboBox : public juce::ComboBox
+{
+public:
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu())
+        {
+            if (auto* host = findParentComponentOfClass<ModAssignHost>())
+                host->showParameterMenu (*this, getProperties()["paramID"].toString());
+            return;
+        }
+        juce::ComboBox::mouseDown (e);
+    }
 };
 
 // A thin-ring knob with its label underneath — the atomic control of the UI.
@@ -180,7 +217,7 @@ public:
 
     void resized() override { combo.setBounds (getLocalBounds()); }
 
-    juce::ComboBox combo;
+    ParamComboBox combo;
 
     void detach() { attachment.reset(); }   // see Knob::detach
 
@@ -210,7 +247,7 @@ public:
 
     void resized() override { button.setBounds (getLocalBounds()); }
 
-    juce::ToggleButton button;
+    ParamToggleButton button;
 
     void detach() { attachment.reset(); }   // see Knob::detach
     bool isDetached() const { return attachment == nullptr; }

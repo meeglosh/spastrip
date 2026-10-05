@@ -303,6 +303,7 @@ SPAStripProcessor::SPAStripProcessor()
 
     // Constructed last: it captures the pristine state as the "Init" baseline.
     presetManager = std::make_unique<preset::PresetManager> (*this);
+    midiLearn = std::make_unique<MidiLearnManager> (apvts);
 
 #if SPASTRIP_HAS_SPA_LICENSING
     // Licence state: file reads only, on the constructing (message) thread.
@@ -576,9 +577,27 @@ void SPAStripProcessor::pushAndReadDry (int numSamples, int delaySamples)
     delayThroughRing (dryRing, dryWritePos, work, dryOut, numSamples, delaySamples);
 }
 
-void SPAStripProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+bool SPAStripProcessor::supportsMidiLearn() const
+{
+   #if SPASTRIP_AU_MIDI
+    return true;   // this target builds only the MusicEffect AU, which Logic feeds MIDI
+   #else
+    return midiLearnForcedForTest || wrapperType == wrapperType_VST3;
+   #endif
+}
+
+void SPAStripProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // MIDI Learn first, so a CC lands in the parameters this block reads.
+    // Lock-free (see MidiLearnManager). An effect produces no MIDI.
+    if (! midi.isEmpty())
+    {
+        if (supportsMidiLearn())
+            midiLearn->processMidi (midi);
+        midi.clear();
+    }
 
     // NOTE: unlike the synth, the buffer is NOT cleared -- this is an effect.
     if (work.getNumSamples() == 0)   // processBlock without prepareToPlay
@@ -1421,6 +1440,14 @@ juce::ValueTree SPAStripProcessor::buildStateTree()
     for (int i = 0; i < numModSlots; ++i)
         state.setProperty (modSlotStateKey (i), getModSlotTarget (i), nullptr);
 
+    // MIDI Learn map (session state; capturePresetState strips it).
+    for (auto stale = state.getChildWithName (MidiLearnManager::mapTreeType); stale.isValid();
+         stale = state.getChildWithName (MidiLearnManager::mapTreeType))
+        state.removeChild (stale, nullptr);
+    auto map = midiLearn->toValueTree();
+    if (map.getNumChildren() > 0)
+        state.appendChild (map, nullptr);
+
     // Which preset the header shows (host state only; presets never carry it).
     // (getStateInformation may be called by a host off the message thread, where only
     // the cached edited flag and the lock-guarded name are safe to read.)
@@ -1489,6 +1516,21 @@ void SPAStripProcessor::restoreStateTree (const juce::ValueTree& incoming, bool 
     state.removeProperty (kPresetEditedProperty, nullptr);
     for (auto child = state.getChildWithName (kIRChildType); child.isValid(); child = state.getChildWithName (kIRChildType))
         state.removeChild (child, nullptr);
+
+    // MIDI Learn map: a host session restore brings its own (or none = cleared);
+    // a preset load keeps the session's (presets never carry one). Never left in
+    // the parameter tree.
+    {
+        const auto map = state.getChildWithName (MidiLearnManager::mapTreeType);
+        if (! isPresetLoad)
+        {
+            if (map.isValid()) midiLearn->restoreFromValueTree (map);
+            else               midiLearn->clearAll();
+        }
+        for (auto c = state.getChildWithName (MidiLearnManager::mapTreeType); c.isValid();
+             c = state.getChildWithName (MidiLearnManager::mapTreeType))
+            state.removeChild (c, nullptr);
+    }
     migrateGrainFreeze (state);
     fillMissingParamsWithDefaults (state);
 

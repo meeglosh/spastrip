@@ -58,12 +58,36 @@ juce_add_plugin(SPAStrip
     FORMATS ${SPASTRIP_FORMATS}
     PRODUCT_NAME "SPAStrip"
     IS_SYNTH FALSE
-    NEEDS_MIDI_INPUT FALSE
+    # MIDI in for MIDI Learn. Only the VST3 ever gets MIDI from this target: Logic
+    # never sends MIDI to a kAudioUnitType_Effect AU (and the editor offers no
+    # MIDI Learn there, see SPAStripProcessor::supportsMidiLearn).
+    NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD ${SPASTRIP_COPY_PLUGIN}
     VST3_CATEGORIES Fx
     AU_MAIN_TYPE kAudioUnitType_Effect)
+
+# "SPAStrip MIDI": the same plugin as a second AU of type kAudioUnitType_MusicEffect
+# ('aumf'), which Logic CAN send MIDI to (choose it under Audio Units > MIDI-controlled
+# Effects, then pick a MIDI source in the plugin header's side-chain MIDI menu).
+# Its own subtype, so it never replaces the plain AU in existing sessions. macOS only.
+if(APPLE)
+    juce_add_plugin(SPAStripMIDI
+        COMPANY_NAME "Silverplatter Audio"
+        COMPANY_WEBSITE "https://www.silverplatteraudio.com"
+        BUNDLE_ID "com.silverplatteraudio.spastripmidi"
+        PLUGIN_MANUFACTURER_CODE SpAu
+        PLUGIN_CODE SpSm
+        FORMATS AU
+        PRODUCT_NAME "SPAStrip MIDI"
+        IS_SYNTH FALSE
+        NEEDS_MIDI_INPUT TRUE
+        NEEDS_MIDI_OUTPUT FALSE
+        IS_MIDI_EFFECT FALSE
+        COPY_PLUGIN_AFTER_BUILD ${SPASTRIP_COPY_PLUGIN}
+        AU_MAIN_TYPE kAudioUnitType_MusicEffect)
+endif()
 
 # Give the AU and VST3 bundles their own CFBundleIdentifier. JUCE stamps one
 # shared BUNDLE_ID into every format, but macOS Installer tracks pkg payload
@@ -87,6 +111,15 @@ if(APPLE)
             message(FATAL_ERROR "Failed to set per-format bundle id for SPAStrip_${_fmt}")
         endif()
     endforeach()
+    get_target_property(_spastrip_midi_gen_dir SPAStripMIDI JUCE_GENERATED_SOURCES_DIRECTORY)
+    execute_process(
+        COMMAND /usr/libexec/PlistBuddy
+                -c "Set :CFBundleIdentifier com.silverplatteraudio.spastripmidi.au"
+                "${_spastrip_midi_gen_dir}/SPAStripMIDI_AU/Info.plist"
+        RESULT_VARIABLE _plist_result)
+    if(NOT _plist_result EQUAL 0)
+        message(FATAL_ERROR "Failed to set the bundle id for SPAStripMIDI_AU")
+    endif()
 endif()
 
 # ---- Factory impulse responses ------------------------------------------------
@@ -146,6 +179,7 @@ set_target_properties(SPAStripBranding PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(SPASTRIP_SOURCES
     source/SPAStripProcessor.cpp
     source/SPAStripProcessorEdit.cpp
+    source/MidiLearn.cpp
     source/params/Randomizer.cpp
     source/presets/PresetManager.cpp
     source/params/ParameterRegistry.cpp
@@ -164,11 +198,17 @@ set(SPASTRIP_SOURCES
     source/ui/StripPanels.cpp
     source/ui/UiSettings.cpp)
 
-target_sources(SPAStrip PRIVATE ${SPASTRIP_SOURCES})
+set(SPASTRIP_PLUGIN_TARGETS SPAStrip)
+if(APPLE)
+    list(APPEND SPASTRIP_PLUGIN_TARGETS SPAStripMIDI)
+endif()
 
-target_include_directories(SPAStrip PRIVATE source ${SPASTRIP_GENERATED_DIR})
+foreach(_plugin ${SPASTRIP_PLUGIN_TARGETS})
+target_sources(${_plugin} PRIVATE ${SPASTRIP_SOURCES})
 
-target_compile_definitions(SPAStrip PRIVATE
+target_include_directories(${_plugin} PRIVATE source ${SPASTRIP_GENERATED_DIR})
+
+target_compile_definitions(${_plugin} PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -177,7 +217,7 @@ target_compile_definitions(SPAStrip PRIVATE
     SPASTRIP_GIT_COMMIT="${SPASTRIP_GIT_COMMIT}"
     SPASTRIP_BUILD_DATE="${SPASTRIP_BUILD_DATE}")
 
-target_link_libraries(SPAStrip
+target_link_libraries(${_plugin}
     PRIVATE
         SPAStripFactoryData
         SPAStripBranding
@@ -187,6 +227,11 @@ target_link_libraries(SPAStrip
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+endforeach()
+target_compile_definitions(SPAStrip PRIVATE SPASTRIP_AU_MIDI=0)
+if(APPLE)
+    target_compile_definitions(SPAStripMIDI PRIVATE SPASTRIP_AU_MIDI=1)
+endif()
 
 # Licensing. The module lives in the PRIVATE repo meeglosh/spa-licensing,
 # checked out (gitignored) at libs/spa-licensing at the commit pinned in
@@ -233,8 +278,10 @@ else()
 endif()
 if(SPASTRIP_SPA_LICENSING_DIR)
     juce_add_module(${SPASTRIP_SPA_LICENSING_DIR}/spa_licensing)
-    target_link_libraries(SPAStrip PRIVATE spa_licensing)
-    target_compile_definitions(SPAStrip PRIVATE SPASTRIP_HAS_SPA_LICENSING=1 ${_spastrip_lic_url_def})
+    foreach(_plugin ${SPASTRIP_PLUGIN_TARGETS})
+        target_link_libraries(${_plugin} PRIVATE spa_licensing)
+        target_compile_definitions(${_plugin} PRIVATE SPASTRIP_HAS_SPA_LICENSING=1 ${_spastrip_lic_url_def})
+    endforeach()
 endif()
 
 # Headless test target: compiles the same sources as the plugin (JUCE modules

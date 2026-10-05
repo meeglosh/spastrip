@@ -1311,6 +1311,7 @@ namespace
 #include "BenchCpu.inc"
 #include "LicensingTests.inc"
 #include "ChorusVhsTests.inc"
+#include "MidiLearnTests.inc"
 }
 
 int main (int argc, char** argv)
@@ -1400,6 +1401,7 @@ int main (int argc, char** argv)
     RUN (chorusVhsTests::extremesTest);
     RUN (chorusVhsTests::registryAndRandomizeTest);
     RUN (chorusVhsTests::uiVisibilityTest);
+    RUN (midiLearnTests::midiLearnTest);
     RUN (fxModuleTests::fxNewModulesOffBypassTest);
     RUN (fxModuleTests::grainBasicsTest);
     RUN (fxModuleTests::grainReverseTest);

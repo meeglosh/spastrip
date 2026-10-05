@@ -309,7 +309,11 @@ juce::ValueTree SPAStripProcessor::capturePresetState()
 {
     auto state = buildStateTree();
 
-    // Session-owned, never in a preset: lock mask, WILD, preset identity.
+    // Session-owned, never in a preset: the MIDI Learn map ...
+    for (auto c = state.getChildWithName (MidiLearnManager::mapTreeType); c.isValid();
+         c = state.getChildWithName (MidiLearnManager::mapTreeType))
+        state.removeChild (c, nullptr);
+    // ... lock mask, WILD, preset identity.
     for (const char* name : { kLockMaskProperty, kModLockProperty, kWildnessProperty, kPresetNameProperty, kPresetEditedProperty })
         state.removeProperty (name, nullptr);
 

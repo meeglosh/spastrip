@@ -444,6 +444,29 @@ public:
             }
         }
 
+        // MIDI Learn for this band's graph-only parameters (only where the build
+        // can receive MIDI; see SPAStripProcessor::supportsMidiLearn). Items
+        // 20000 + k*10 + action: k 0 freq / 1 gain / 2 Q; action 1 learn, 2 remove.
+        const char* learnKeys[3] { params::id::fx::eqband::freq, params::id::fx::eqband::gain,
+                                   params::id::fx::eqband::q };
+        if (processor.supportsMidiLearn())
+        {
+            auto& learn = processor.getMidiLearn();
+            const char* learnNames[3] { "Freq", "Gain", "Q" };
+            juce::PopupMenu learnMenu;
+            for (int k = 0; k < 3; ++k)
+            {
+                const auto pid = params::id::eqBand (b, learnKeys[k]);
+                const auto cc = learn.getAssignedCC (pid);
+                learnMenu.addItem (20000 + k * 10 + 1, juce::String ("MIDI Learn ") + learnNames[k]
+                                       + (cc >= 0 ? " (now CC " + juce::String (cc) + ")" : juce::String()));
+                if (cc >= 0)
+                    learnMenu.addItem (20000 + k * 10 + 2, juce::String ("Remove ") + learnNames[k] + " CC " + juce::String (cc));
+            }
+            menu.addSeparator();
+            menu.addSubMenu ("MIDI Learn", learnMenu);
+        }
+
         // Anchor to the NODE, not the whole editor. Bug (Mike, screenshot):
         // withTargetComponent(this) targeted the whole EqEditor's screen
         // bounds; combined with the editor content's scale transform
@@ -456,6 +479,16 @@ public:
             [this, b] (int result)
             {
                 if (result <= 0) return;
+                if (result >= 20000)
+                {
+                    const int k = (result - 20000) / 10, action = (result - 20000) % 10;
+                    const char* keys[3] { params::id::fx::eqband::freq, params::id::fx::eqband::gain,
+                                          params::id::fx::eqband::q };
+                    const auto pid = params::id::eqBand (b, keys[juce::jlimit (0, 2, k)]);
+                    if (action == 1) processor.getMidiLearn().armLearn (pid);
+                    else             processor.getMidiLearn().clearAssignment (pid);
+                    return;
+                }
                 if (result >= 10000)
                 {
                     const int r = result - 10000;

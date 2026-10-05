@@ -9,6 +9,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include "MidiLearn.h"
 #include "dsp/FXChain.h"
 #include "dsp/Telemetry.h"
 #include "ir/FactoryIRs.h"
@@ -73,7 +74,11 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "SPAStrip"; }
+   #if defined (JucePlugin_WantsMidiInput) && JucePlugin_WantsMidiInput
+    bool acceptsMidi() const override { return true; }    // VST3 and the "SPAStrip MIDI" AU (MIDI Learn)
+   #else
     bool acceptsMidi() const override { return false; }
+   #endif
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return fxChain.tailSeconds (fxParams); }
@@ -117,6 +122,18 @@ public:
     bool isLocked (dsp::FXChain::Module module) const;
     void setLocked (dsp::FXChain::Module module, bool locked);
     juce::uint32 getFxLockMask() const;
+
+    //==========================================================================
+    // MIDI Learn (CC -> parameter). Offered only where the host can actually
+    // send MIDI to the plugin: the VST3, and the separate "SPAStrip MIDI" AU
+    // (kAudioUnitType_MusicEffect, built with SPASTRIP_AU_MIDI=1). The plain
+    // SPAStrip AU is kAudioUnitType_Effect, which Logic never sends MIDI to, so
+    // it shows no MIDI Learn items. The map is session state: saved with the
+    // host session (a "MIDIMAP" child), kept across preset loads, never in a
+    // preset, not undoable (as in SPASynth / SPAGlitch).
+    bool supportsMidiLearn() const;
+    MidiLearnManager& getMidiLearn() { return *midiLearn; }
+    void enableMidiLearnForTest() { midiLearnForcedForTest = true; }
     // The MODULATION lock: when on, Randomize All keeps every mod slot's target
     // and depth. Session state like the effect locks ("modLocked"; not in
     // presets, not undoable).
@@ -577,6 +594,8 @@ private:
     void watchdogCloseStaleUndoStep();
 
     std::unique_ptr<preset::PresetManager> presetManager;
+    std::unique_ptr<MidiLearnManager> midiLearn;
+    bool midiLearnForcedForTest = false;
 #if SPASTRIP_HAS_SPA_LICENSING
     // Declared after presetManager so they are destroyed FIRST (the preset
     // manager's save gate reads licenceState through `this`, only on the

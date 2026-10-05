@@ -81,8 +81,15 @@ public:
     juce::PopupMenu createLogoMenuForTest() { return createLogoMenu(); }
 #endif
 
-    // ModAssignHost.
-    void showModAssignMenu (juce::Slider&, const juce::String& paramID) override;
+    // ModAssignHost: the right-click menu of every parameter control.
+    void showParameterMenu (juce::Component&, const juce::String& paramID) override;
+    // Builds that menu, and applies a chosen item (tests drive these instead of the
+    // modal popup). Items: 1 MIDI Learn, 2 remove the CC, 3 cancel learning,
+    // 101..108 assign to mod slot n, 201..208 remove from mod slot n.
+    juce::PopupMenu buildParameterMenu (const juce::String& paramID);
+    void applyParameterMenuResult (int result, const juce::String& paramID);
+    // Footer status while MIDI Learn listens / just captured ("" = none).
+    juce::String getMidiLearnStatusForTest() const { return midiLearnStatus; }
     // The menu's action (also driven by tests): assign (or, when already assigned, remove)
     // `paramID` to/from `slot` as ONE undo step.
     void toggleModAssignment (const juce::String& paramID, int slot);
@@ -125,6 +132,10 @@ private:
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     };
 
+    void updateMidiLearnStatus();
+    juce::String midiLearnStatus;
+    juce::uint32 midiLearnStatusUntilMs = 0;   // 0 = stays (listening)
+    juce::String midiLearnLastArmed;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
     void updateActive();
