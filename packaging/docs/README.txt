@@ -4,8 +4,8 @@ Version @VERSION@ (@DATE@)
 
 Thank you for buying SPAStrip! SPAStrip is a channel-strip-style effects
 chain from Silverplatter Audio: twelve effects (filter, distortion, chorus,
-modulation, tremolo/vibrato, grain, delay, reverb, convolution, EQ,
-compressor and limiter) in a chain you can reorder, a sidechain-driven
+modulation, tremolo/vibrato, glitter, delay, reverb, convolution, EQ,
+multiband compressor and limiter) in a chain you can reorder, a sidechain-driven
 modulation matrix, a Randomize All button, and nineteen factory impulse
 responses for the convolution module.
 
