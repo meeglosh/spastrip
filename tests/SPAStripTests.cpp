@@ -1453,6 +1453,7 @@ int main (int argc, char** argv)
     RUN (phase2bTests::nonFxStateUntouchedTest);
     RUN (phase2bTests::lockedModuleTest);
     RUN (phase2bTests::allLockedTest);
+    RUN (phase2bTests::modRollTest);
     RUN (phase2bTests::limiterRulesTest);
     RUN (phase2bTests::tremVibLockTest);
     RUN (phase2bTests::grainConvRulesTest);

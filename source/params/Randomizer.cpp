@@ -1,4 +1,5 @@
 #include "Randomizer.h"
+#include "../mod/ModTargets.h"
 
 namespace spa::params
 {
@@ -325,6 +326,86 @@ void randomizeAll (juce::AudioProcessorValueTreeState& apvts, float wildness, ju
         if (auto* start = apvts.getParameter (id::fx::convStart))
             if (start->convertFrom0to1 (start->getValue()) > 0.5f)
                 writeNorm (*start, start->convertTo0to1 (0.5f));
+}
+
+bool isAudibleModTarget (juce::AudioProcessorValueTreeState& apvts, const juce::String& targetId, juce::uint32 lockMask)
+{
+    const auto* def = find (targetId);
+    if (def == nullptr)
+        return false;
+    const auto module = moduleForSection (def->section);
+    if (! module.has_value() || *module == Module::limiter || isLocked (lockMask, *module))
+        return false;
+
+    const auto on = [&apvts] (const juce::String& pid)
+    {
+        auto* v = apvts.getRawParameterValue (pid);
+        return v != nullptr && v->load() >= 0.5f;
+    };
+
+    // The effect's own switch: "<prefix>.enable" (fxTrem.* and fxVib.* have one
+    // each; COMP's per-band params live under fxComp. like the rest).
+    const auto prefix = targetId.upToFirstOccurrenceOf (".", false, false);
+    if (! on (prefix + ".enable"))
+        return false;
+
+    // A sub-unit with its own switch.
+    if (targetId.startsWith ("fxEQ.band"))
+        if (! on (targetId.upToLastOccurrenceOf (".", false, false) + ".enable"))
+            return false;
+    if (targetId.startsWith ("fxFilter.f2.") && ! on (id::fx::filter2Enable))
+        return false;
+
+    // Free-running controls that do nothing while their effect is synced.
+    namespace fx = id::fx;
+    const struct { const char* target; const char* sync; } synced[] {
+        { fx::delayTime, fx::delaySync }, { fx::modRate, fx::modSync }, { fx::tremRate, fx::tremSync },
+        { fx::vibRate, fx::vibSync }, { fx::grainDensity, fx::grainSync } };
+    for (const auto& s : synced)
+        if (targetId == s.target && on (s.sync))
+            return false;
+
+    return true;
+}
+
+std::array<juce::String, id::numModSlots> rollModSlots (juce::AudioProcessorValueTreeState& apvts, float wildness,
+                                                       juce::uint32 lockMask, juce::Random& rng)
+{
+    wildness = juce::jlimit (0.0f, 1.0f, wildness);
+
+    juce::StringArray candidates;
+    for (const auto& t : mod::targets())
+        if (isAudibleModTarget (apvts, t.id, lockMask))
+            candidates.add (t.id);
+
+    // Nothing eligible (every effect off or locked): leave the slots as they are
+    // rather than clearing modulation the user may have set up. Draws nothing.
+    std::array<juce::String, id::numModSlots> targets;
+    if (candidates.isEmpty())
+    {
+        targets[0] = keepSlotsMarker;
+        return targets;
+    }
+
+    const int lo = 1 + juce::roundToInt (5.0f * wildness);
+    const int count = juce::jmin (id::numModSlots, lo + rng.nextInt (3), candidates.size());
+
+    const float maxDepth = 0.4f + 0.5f * wildness;
+    for (int s = 0; s < id::numModSlots; ++s)
+    {
+        float depth = 0.0f;
+        if (s < count)
+        {
+            const int pick = rng.nextInt (candidates.size());
+            targets[(size_t) s] = candidates[pick];
+            candidates.remove (pick);   // one slot per target
+            const float magnitude = 0.15f + rng.nextFloat() * (maxDepth - 0.15f);
+            depth = rng.nextBool() ? magnitude : -magnitude;
+        }
+        if (auto* p = apvts.getParameter (id::modSlotDepth (s)))
+            writeNorm (*p, p->convertTo0to1 (depth));
+    }
+    return targets;
 }
 
 } // namespace spa::params

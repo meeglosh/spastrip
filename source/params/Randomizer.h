@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 
 #include "ParameterRegistry.h"
@@ -87,8 +88,34 @@ juce::Array<int> shuffleFxOrder (const juce::Array<int>& order, juce::uint32 loc
 //     `guardFilter` is true -- the flag exists so a test can measure the
 //     unguarded roll): deterministic, they consume no random numbers.
 //
-// Never touched: global.*, sc.*, mod.slotN.depth, mod slot targets, the IR.
+// Never touched: global.*, sc.*, mod.slotN.depth, mod slot targets, the IR
+// (the mod slots are rolled separately, by rollModSlots).
 void randomizeAll (juce::AudioProcessorValueTreeState&, float wildness, juce::uint32 lockMask,
                    juce::Array<int>& fxOrder, juce::Random&, bool guardFilter = true);
+
+// RANDOMIZE ALL's modulation roll (SPASynth rolls its matrix routes the same
+// way; here the source is always the sidechain envelope). Call AFTER
+// randomizeAll so the effects' rolled state is what decides the candidates,
+// and so every draw randomizeAll makes stays where it was.
+//
+//  * How many slots: lo..lo+2 (at most 8), lo = 1 + round(5 x wildness), so
+//    1-3 at WILD 0 and 6-8 at full WILD; the rest are cleared.
+//  * Targets: modulation targets of effects that are ON after the roll and
+//    not locked. Skipped as inaudible or unsafe: the limiter (the safety
+//    ceiling), an EQ band that is off, filter 2 while it is off, and a rate /
+//    time / density knob while its effect is synced to tempo. Distinct per slot.
+//  * Depth: |depth| in 0.15 .. 0.4 + 0.5 x wildness, random sign; cleared
+//    slots get depth 0. If nothing is eligible, nothing is written or drawn and
+//    slot 0 holds keepSlotsMarker.
+//
+// Writes the depth parameters (gesture-wrapped) and returns the target per
+// slot ("" = cleared) for the caller to apply with setModSlotTarget.
+// Returned in slot 0 when nothing is eligible: the caller keeps every slot as is.
+inline const juce::String keepSlotsMarker { "<keep>" };
+std::array<juce::String, id::numModSlots> rollModSlots (juce::AudioProcessorValueTreeState&, float wildness,
+                                                       juce::uint32 lockMask, juce::Random&);
+
+// True when modulating `targetId` would currently be heard (the candidate rule above).
+bool isAudibleModTarget (juce::AudioProcessorValueTreeState&, const juce::String& targetId, juce::uint32 lockMask);
 
 } // namespace spa::params

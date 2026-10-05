@@ -313,6 +313,7 @@ namespace phase2bTests
                     setParam (*p, fx::grainFreeze, 1.0f);          // must be forced off by the roll
                     setParam (*p, fx::convStart, 0.9f);
                     p->setRandomWildness (wild);
+                    p->setModLocked (true);   // the synth flow compared here is the FX roll; modulation has its own test
                 }
                 juce::Random ra (seed), rb (seed);
                 // Chained: the order shuffle and every "previous value" dependency carry across rolls.
@@ -414,6 +415,7 @@ namespace phase2bTests
         proc->setLocked (Module::reverb, true);
         proc->setLocked (Module::grain, true);
         proc->setRandomWildness (0.9f);
+        proc->setModLocked (true);   // locked modulation keeps slots and depths (modRollTest covers the unlocked roll)
 
         std::vector<juce::String> keep;
         for (const auto& def : params::all())
@@ -431,10 +433,10 @@ namespace phase2bTests
         bool same = true;
         for (size_t i = 0; i < keep.size(); ++i)
             same = same && sameBits (keepBefore[i], proc->getAPVTS().getParameter (keep[i])->getValue());
-        expect (same, "global.*, sc.* and mod.slotN.depth (" + juce::String ((int) keep.size()) + " parameters) are bit-identical after 80 rolls");
+        expect (same, "global.*, sc.* and (MODULATION locked) mod.slotN.depth (" + juce::String ((int) keep.size()) + " parameters) are bit-identical after 80 rolls");
         bool slotsSame = true;
         for (int s = 0; s < 8; ++s) slotsSame = slotsSame && proc->getModSlotTarget (s) == slots[s];
-        expect (slotsSame, "mod slot targets untouched");
+        expect (slotsSame, "MODULATION locked: mod slot targets untouched");
         expect (proc->getConvolutionIRSource() == "factory:dark-plate" && proc->hasConvolutionIR(), "the loaded IR is untouched");
         expect (proc->getFxLockMask() == mask && juce::approximatelyEqual (proc->getRandomWildness(), 0.9f), "lock mask and WILD are untouched");
     }
@@ -498,6 +500,7 @@ namespace phase2bTests
         setParam (*proc, fx::convStart, 0.9f);
         for (int m = 0; m < kNumModules; ++m)
             proc->setLocked ((Module) m, true);
+        proc->setModLocked (true);
         proc->clearUndoHistory();
         const auto before = allValues (*proc);
         const auto orderBefore = proc->getFxOrder();
@@ -508,7 +511,7 @@ namespace phase2bTests
             juce::Random rng (seed);
             proc->randomizeAll (rng);
         }
-        expect (identicalValues (allValues (*proc), before), "all 12 locked: every parameter (limiter, freeze, convStart included) bit-identical after 100 rolls");
+        expect (identicalValues (allValues (*proc), before), "all 12 locked + MODULATION: every parameter (limiter, freeze, convStart included) bit-identical after 100 rolls");
         expect (proc->getFxOrder() == orderBefore && proc->capturePatchSnapshot() == snap, "...and the chain order and whole patch are unchanged");
         expect (! proc->canUndo(), "...and a roll that changes nothing records no undo step");
     }
@@ -1611,5 +1614,108 @@ namespace phase2bTests
        #if ! JUCE_MAC
         std::cout << "  (allocation counting skipped: the hook is macOS-only; the NaN / concurrency part ran)\n";
        #endif
+    }
+
+    // RANDOMIZE ALL rolls the mod slots (SPASynth rolls its matrix routes the same way).
+    void modRollTest()
+    {
+        std::cout << "modRollTest\n";
+        auto targetsOf = [] (Proc& p) { juce::StringArray t; for (int s = 0; s < 8; ++s) t.add (p.getModSlotTarget (s)); return t; };
+        auto depthOf = [] (Proc& p, int s) { return p.getAPVTS().getRawParameterValue (pid::modSlotDepth (s))->load(); };
+
+        int badCount = 0, badTarget = 0, badDepth = 0, dupes = 0, rolls = 0, lockedHit = 0;
+        for (float wild : { 0.0f, 0.5f, 1.0f })
+            for (int seed = 1; seed <= 30; ++seed, ++rolls)
+            {
+                auto proc = makeProc (48000.0, 256);
+                proc->setRandomWildness (wild);
+                proc->setLocked (Module::eq, seed % 3 == 0);
+                juce::Random rng (seed);
+                proc->randomizeAll (rng);
+                const auto mask = proc->getFxLockMask();
+                const auto t = targetsOf (*proc);
+                int assigned = 0;
+                juce::StringArray seen;
+                for (int s = 0; s < 8; ++s)
+                {
+                    const float d = depthOf (*proc, s);
+                    if (t[s].isEmpty()) { if (d != 0.0f) ++badDepth; continue; }
+                    ++assigned;
+                    if (seen.contains (t[s])) ++dupes;
+                    seen.add (t[s]);
+                    if (! params::isAudibleModTarget (proc->getAPVTS(), t[s], mask)) ++badTarget;
+                    if (proc->isLocked (Module::eq) && t[s].startsWith ("fxEQ.")) ++lockedHit;
+                    if (std::abs (d) < 0.15f - 1.0e-4f || std::abs (d) > 0.4f + 0.5f * wild + 1.0e-4f) ++badDepth;
+                }
+                const int lo = 1 + juce::roundToInt (5.0f * wild);
+                if (assigned < 1 || assigned > juce::jmin (8, lo + 2) || (assigned < lo && assigned != seen.size())) ++badCount;
+                if (assigned < lo) ++badCount;   // with 12 effects rolled there are always enough candidates
+            }
+        expect (badCount == 0, "slot count follows WILD (1-3 at 0, 6-8 at 1) over " + juce::String (rolls) + " rolls (" + juce::String (badCount) + " bad)");
+        expect (badTarget == 0, "every rolled target belongs to an effect that is on, unlocked and not synced away (" + juce::String (badTarget) + " bad)");
+        expect (lockedHit == 0, "a locked effect is never targeted");
+        expect (dupes == 0, "no target is assigned twice in one roll");
+        expect (badDepth == 0, "depths: 0.15 .. 0.4 + 0.5 x WILD on assigned slots, 0 on cleared ones (" + juce::String (badDepth) + " bad)");
+
+        // Deterministic for a seed.
+        {
+            auto a = makeProc (48000.0, 256), b = makeProc (48000.0, 256);
+            juce::Random ra (77), rb (77);
+            a->randomizeAll (ra); b->randomizeAll (rb);
+            expect (targetsOf (*a) == targetsOf (*b), "same seed, same mod slots");
+        }
+
+        // MODULATION lock keeps targets and depths; unlocked rolls change them.
+        {
+            auto proc = makeProc (48000.0, 256);
+            juce::Random rng (5);
+            proc->randomizeAll (rng);
+            const auto before = targetsOf (*proc);
+            std::array<float, 8> depths {};
+            for (int s = 0; s < 8; ++s) depths[(size_t) s] = depthOf (*proc, s);
+            proc->setModLocked (true);
+            for (int i = 0; i < 20; ++i) proc->randomizeAll (rng);
+            bool same = targetsOf (*proc) == before;
+            for (int s = 0; s < 8; ++s) same = same && sameBits (depths[(size_t) s], depthOf (*proc, s));
+            expect (same, "MODULATION locked: 20 rolls keep every slot target and depth");
+            proc->setModLocked (false);
+            proc->randomizeAll (rng);
+            expect (targetsOf (*proc) != before, "unlocked again: the next roll reassigns");
+        }
+
+        // One undo step brings the previous slots back.
+        {
+            auto proc = makeProc (48000.0, 256);
+            proc->setModSlotTarget (0, Proc::getModTargets()[3].id);
+            proc->clearUndoHistory();
+            const auto before = targetsOf (*proc);
+            juce::Random rng (9);
+            proc->randomizeAll (rng);
+            proc->undo();
+            expect (targetsOf (*proc) == before, "one undo restores the mod slots a roll replaced");
+        }
+
+        // Nothing eligible (every effect locked): the slots are kept, not cleared.
+        {
+            auto proc = makeProc (48000.0, 256);
+            proc->setModSlotTarget (2, Proc::getModTargets()[5].id);
+            for (int m = 0; m < kNumModules; ++m) proc->setLocked ((Module) m, true);
+            const auto before = targetsOf (*proc);
+            juce::Random rng (3);
+            proc->randomizeAll (rng);
+            expect (targetsOf (*proc) == before, "every effect locked: a roll keeps the mod slots");
+        }
+
+        // The lock is session state: saved with the host state, never in a preset.
+        {
+            auto a = makeProc (48000.0, 256);
+            a->setModLocked (true);
+            juce::MemoryBlock block;
+            a->getStateInformation (block);
+            auto b = makeProc (48000.0, 256);
+            b->setStateInformation (block.getData(), (int) block.getSize());
+            expect (b->isModLocked(), "MODULATION lock survives a host session save / restore");
+            expect (! a->capturePresetState().hasProperty ("modLocked"), "...and is never written into a preset");
+        }
     }
 }

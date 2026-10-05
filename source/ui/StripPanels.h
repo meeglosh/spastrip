@@ -105,6 +105,7 @@ public:
     void showPicker (int slot);
     void chooseTarget (int slot, const juce::String& parameterID);
     PickerButton& getPickerForTest (int slot) { return cells[(size_t) slot]->picker; }
+    juce::Button& getLockButtonForTest() { return lockButton; }
     Knob& getDepthKnobForTest (int slot) { return cells[(size_t) slot]->depth; }
     float getActivityForTest (int slot) const { return cells[(size_t) slot]->shownActivity; }
 
@@ -129,8 +130,22 @@ private:
         juce::String shownTarget { "?" };
     };
 
+    // The MODULATION lock (Randomize All keeps the slots), drawn like the effect
+    // tabs' padlocks, just after the panel title.
+    struct LockButton : juce::Button
+    {
+        explicit LockButton (SPAStripProcessor& p) : juce::Button ("Lock modulation"), proc (p)
+        {
+            setWantsKeyboardFocus (false);
+            setTooltip ("Lock modulation: RANDOMIZE ALL keeps every slot's target and depth.");
+        }
+        void paintButton (juce::Graphics&, bool over, bool down) override;
+        SPAStripProcessor& proc;
+    };
+
     SPAStripProcessor& processor;
     std::array<std::unique_ptr<Cell>, SPAStripProcessor::numModSlots> cells;
+    LockButton lockButton { processor };
 };
 
 //==============================================================================

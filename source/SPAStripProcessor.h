@@ -117,6 +117,11 @@ public:
     bool isLocked (dsp::FXChain::Module module) const;
     void setLocked (dsp::FXChain::Module module, bool locked);
     juce::uint32 getFxLockMask() const;
+    // The MODULATION lock: when on, Randomize All keeps every mod slot's target
+    // and depth. Session state like the effect locks ("modLocked"; not in
+    // presets, not undoable).
+    bool isModLocked() const;
+    void setModLocked (bool locked);
 
     //==========================================================================
     // Undo / redo (message thread). History of everything done to the SOUND:
@@ -202,6 +207,7 @@ public:
     // Property names kept in the live state tree.
     static constexpr const char* kLockMaskProperty = "fxLockMask";
     static constexpr const char* kWildnessProperty = "randomWildness";
+    static constexpr const char* kModLockProperty = "modLocked";
     // Host-state-only (never in a preset): the loaded preset's name / edited flag.
     static constexpr const char* kPresetNameProperty = "presetName";
     static constexpr const char* kPresetEditedProperty = "presetEdited";

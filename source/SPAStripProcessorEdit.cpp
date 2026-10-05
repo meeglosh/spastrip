@@ -55,6 +55,16 @@ void SPAStripProcessor::setLocked (dsp::FXChain::Module module, bool locked)
     apvts.state.setProperty (kLockMaskProperty, (int) mask, nullptr);
 }
 
+bool SPAStripProcessor::isModLocked() const
+{
+    return (bool) apvts.state.getProperty (kModLockProperty, false);
+}
+
+void SPAStripProcessor::setModLocked (bool locked)
+{
+    apvts.state.setProperty (kModLockProperty, locked, nullptr);
+}
+
 void SPAStripProcessor::randomizeAll()
 {
     randomizeAll (juce::Random::getSystemRandom());
@@ -73,6 +83,16 @@ void SPAStripProcessor::randomizeAll (juce::Random& rng)
     auto order = getFxOrder();
     params::randomizeAll (apvts, getRandomWildness(), getFxLockMask(), order, rng);
     setFxOrder (order);   // nested step: folds into the one above
+
+    // Modulation last: its candidates depend on which effects the roll left on,
+    // and drawing after everything else keeps every earlier draw where it was.
+    if (! isModLocked())
+    {
+        const auto targets = params::rollModSlots (apvts, getRandomWildness(), getFxLockMask(), rng);
+        if (targets[0] != params::keepSlotsMarker)
+            for (int s = 0; s < numModSlots; ++s)
+            setModSlotTarget (s, targets[(size_t) s]);   // nested steps fold in too
+    }
 }
 
 //==============================================================================
@@ -290,7 +310,7 @@ juce::ValueTree SPAStripProcessor::capturePresetState()
     auto state = buildStateTree();
 
     // Session-owned, never in a preset: lock mask, WILD, preset identity.
-    for (const char* name : { kLockMaskProperty, kWildnessProperty, kPresetNameProperty, kPresetEditedProperty })
+    for (const char* name : { kLockMaskProperty, kModLockProperty, kWildnessProperty, kPresetNameProperty, kPresetEditedProperty })
         state.removeProperty (name, nullptr);
 
     // UI state (uiScale, uiFxTab, drawer open, ...: every "ui*" property) lives in

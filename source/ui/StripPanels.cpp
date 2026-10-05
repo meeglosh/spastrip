@@ -356,8 +356,26 @@ void ModMatrixPanel::Cell::resized()
     activity.setBounds (r.reduced (0, 0).withSizeKeepingCentre (juce::jmax (0, r.getWidth() - 4), 8).translated (0, -6));
 }
 
+void drawPadlockGlyph (juce::Graphics&, juce::Rectangle<float>, juce::Colour, bool locked);   // SPAStripLookAndFeel.cpp
+
+void ModMatrixPanel::LockButton::paintButton (juce::Graphics& g, bool over, bool)
+{
+    const auto& t = currentTheme();
+    const bool locked = proc.isModLocked();
+    const auto r = getLocalBounds().toFloat();
+    const float h = juce::jmin (10.0f, r.getHeight() - 2.0f);
+    const auto glyph = juce::Rectangle<float> (h * 0.78f, h).withCentre (r.getCentre());
+    drawPadlockGlyph (g, glyph, locked ? t.assignSelected : t.textSecondary.withAlpha (over ? 0.9f : 0.34f), locked);
+}
+
 ModMatrixPanel::ModMatrixPanel (SPAStripProcessor& p) : processor (p)
 {
+    lockButton.onClick = [this]
+    {
+        processor.setModLocked (! processor.isModLocked());
+        lockButton.repaint();
+    };
+    addAndMakeVisible (lockButton);
     for (int s = 0; s < SPAStripProcessor::numModSlots; ++s)
     {
         auto cell = std::make_unique<Cell> (p, s);
@@ -386,6 +404,14 @@ void ModMatrixPanel::paint (juce::Graphics& g)
 
 void ModMatrixPanel::resized()
 {
+    {
+        // Just after the title, which sectionHeader draws at its left inset.
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText (metrics::sectionFont(), "MODULATION", 0.0f, 0.0f);
+        const int titleW = (int) std::ceil (glyphs.getBoundingBox (0, -1, true).getWidth());
+        auto header = getLocalBounds().removeFromTop (metrics::sectionHeaderHeight).withTrimmedTop (metrics::sectionHeaderTopInset);
+        lockButton.setBounds (header.getX() + metrics::sectionHeaderLeftInset + titleW + 4, header.getY(), 20, header.getHeight());
+    }
     auto r = getLocalBounds().withTrimmedTop (metrics::sectionHeaderHeight).reduced (10, 4);
     const int colW = r.getWidth() / 4;
     const int rowH = r.getHeight() / 2;
