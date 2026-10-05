@@ -1,0 +1,24 @@
+SPAStrip 1.0.3 - what's new since 1.0.2
+
+Existing presets and sessions sound the same.
+
+New
+- MIDI Learn on every parameter: right-click any knob, switch or menu, choose MIDI Learn, then move a control on your MIDI controller. Right-click again to remove it. The footer tells you when it's listening and which CC it caught. Assignments are saved with your session, not in presets. On an EQ point, the right-click menu has a MIDI Learn submenu for Freq, Gain and Q.
+  - VST3: route a MIDI track or your controller to SPAStrip.
+  - Logic: there is a new plug-in, "SPAStrip MIDI", under Audio Units > MIDI-controlled Effects. Pick your MIDI source in the side-chain MIDI menu at the top of the plug-in window. The regular SPAStrip AU can't receive MIDI in Logic, so it has no MIDI Learn (Logic's own controller mapping still works on it).
+- RANDOMIZE ALL now assigns modulation, like SPASynth: 1-3 mod slots at low WILD, up to 6-8 at full WILD, only on effects that end up on. A new padlock next to the MODULATION title keeps your slots as they are.
+- CHORUS has a VHS mode, as in SPASynth: WOW, FLUTTER, TONE, SATURATION, HISS and DROPOUTS for a worn 80s tape sound. The six knobs appear only in VHS mode. Vintage and Modern sound exactly as before.
+- Every knob in an effect panel is now the same size, whatever its label.
+
+Fixed
+- RANDOMIZE ALL no longer leaves the reverb mostly wet with a high LOW CUT, which made the track go quiet and thin.
+
+Worth trying specifically
+- MIDI Learn a few knobs, a switch and an EQ point's Freq; save and reopen the session and check they still respond.
+- Logic: SPAStrip MIDI on a track, controller routed through the side-chain MIDI menu.
+- Hit RANDOMIZE ALL a few times with a sidechain routed (or SC Source set to Input) and listen to the modulation; then lock MODULATION and roll again.
+- CHORUS VHS on a pad or keys: push WOW and FLUTTER, then HISS and DROPOUTS.
+
+Install notes
+- macOS: signed and notarised. The installer now has three choices: Audio Unit, Audio Unit (MIDI) and VST3. If the new version doesn't show up, Plug-in Manager > Reset & Rescan Selection, then restart Logic.
+- Windows: unsigned. Click More info, then Run anyway at the SmartScreen prompt.
