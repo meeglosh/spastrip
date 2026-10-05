@@ -151,5 +151,11 @@ export SPASYNTH_NOTARIZE_PROFILE="SPASYNTH_NOTARY"   # fallback; ~/.config/spasy
   Knee / Solo / Bypass (new params in their own host group "FX Comp Bands", appended
   last so no host index moves; knee 0 = original hard knee, still bit-identical to
   SPAGlitch). Display names: Threshold, Down Ratio, Up Ratio, Makeup, Low/High Crossover.
+- GLITTER: RELEASE knob replaces FREEZE (SPASynth 1.0.31's GrainFX, verbatim). FREEZE stays
+  registered but hidden; freeze=on states load as RELEASE infinite. RELEASE is excluded
+  from mod targets. `tests/reference/GrainFX_1_0_2.h` is the pre-RELEASE GrainFX for the
+  RELEASE-off identity test.
+- 1.0.2 was rebuilt with RELEASE before going out (commit 10e122a). Tester note:
+  `docs/tester-note-1.0.2.txt`.
 - Pending: Phil's sign-off on the new COMP, then port DSP (`Multiband.h`) + panel to
   SPASynth and SPAGlitch (owner's decision: finish here first, then copy).

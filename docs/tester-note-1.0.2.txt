@@ -1,0 +1,30 @@
+SPAStrip 1.0.2 - what's new since 1.0.1
+
+Mostly from Phil's 1.0.1 feedback. Existing presets and sessions sound the same.
+
+New
+- COMP rebuilt as a modern multiband compressor (Phil):
+  - A live spectrum sits behind the three bands. Drag a band up or down to set its threshold (Shift for fine, double-click to reset).
+  - Drag the crossover lines sideways, or use the new LOW X / HIGH X knobs. Wheel over a band sets its ratio.
+  - Each band shows its gain change live: reduction below its threshold line, upward lift above.
+  - A transfer curve for the selected band, with a dot riding it at the live level.
+  - IN / GR / OUT meters.
+  - New per band: KNEE, SOLO and BYPASS.
+  - Standard names: THRESHOLD, DOWN RATIO, UP RATIO, KNEE, ATTACK, RELEASE, MAKEUP. RATIO is now DOWN RATIO to pair with UP RATIO (Phil).
+- GLITTER (formerly GRAIN): a RELEASE knob replaces the FREEZE button, as in SPASynth 1.0.31. RELEASE sets how long the cloud takes to fade once the sound stops, up to 30 s, whatever POSITION and SIZE are. All the way up (∞) holds what it has heard, just like FREEZE did. Off leaves it to FEEDBACK, as before. Sessions saved with FREEZE on open with RELEASE at ∞.
+- Tooltips on every knob, menu and switch (Phil).
+- Join the Newsletter... in the logo menu, plus an optional newsletter opt-in when you activate.
+- The macOS installer won't run while Logic, MainStage or GarageBand is open.
+
+Fixed
+- EQ: a modulated band now moves on the graph, not just in the sound (Phil).
+
+Worth trying specifically
+- COMP on drums or a mix bus: drag the bands and crossovers on the graph, solo a band while you set its crossover, and push UP RATIO with DOWN RATIO for the dense "OTT" sound.
+- Watch the transfer curve and the GR meter while you change KNEE.
+- GLITTER: put RELEASE at 5 to 10 s on a pad and change POSITION; the wash should keep its length. Then turn it all the way up to hold.
+- Hover anything you're unsure about and let me know if a tooltip reads oddly.
+
+Install notes
+- macOS: signed and notarised. If the new version doesn't show up, Plug-in Manager > Reset & Rescan Selection, then restart Logic.
+- Windows: unsigned. Click More info, then Run anyway at the SmartScreen prompt.
