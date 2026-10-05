@@ -181,7 +181,7 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     fxTabs.addTab ("LIMIT", tabBg, new LimiterPanel (apvts, tel), true);
     convolvePanel = new ConvolvePanel (processor);
     fxTabs.addTab ("CONV", tabBg, convolvePanel, true);
-    fxTabs.addTab ("COMP", tabBg, new CompPanel (apvts, tel), true);
+    fxTabs.addTab ("COMP", tabBg, new CompPanel (apvts, tel, [this] { return processor.getSampleRate(); }), true);
     fxTabs.addTab ("GLITTER", tabBg, new FXPanel (apvts, FXDisplay::Kind::grain, params::Section::fxGrain, "Glitter",
                                                 juce::StringArray { fx::grainEnable }, &tel), true);
     fxTabs.addTab ("FILTER", tabBg, new FilterPanel (apvts, [this] { return processor.getSampleRate(); }), true);

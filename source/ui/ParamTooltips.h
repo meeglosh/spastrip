@@ -179,8 +179,8 @@ inline juce::String tooltipFor (const juce::String& paramID)
     if (paramID.startsWith ("fxComp.band"))
     {
         const auto key = paramID.fromLastOccurrenceOf (".", false, false);
-        if (key == "thresh")  return "Threshold: level where compression starts. Signal above it is turned down, signal below it is lifted by the Upward Ratio.";
-        if (key == "ratio")   return "Ratio: how strongly signal above the threshold is turned down. 4:1 means 4 dB over becomes 1 dB over.";
+        if (key == "thresh")  return "Threshold: level where compression starts. Signal above it is turned down, signal below it is lifted by the Up Ratio.";
+        if (key == "ratio")   return "Down ratio: how strongly signal above the threshold is turned down. 4:1 means 4 dB over becomes 1 dB over.";
         if (key == "upratio") return "Upward ratio: how strongly quiet signal below the threshold is brought up. 1:1 is off.";
         if (key == "attack")  return "Attack: how fast the band reacts when the level rises.";
         if (key == "release") return "Release: how fast the band recovers when the level falls.";

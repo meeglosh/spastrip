@@ -22,6 +22,7 @@ juce::String sectionName (Section s)
         case Section::sidechain: return "Sidechain";
         case Section::modMatrix: return "Mod Matrix";
         case Section::fxFilter:  return "FX Filter";
+        case Section::fxCompBands: return "FX Comp Bands";
     }
     return {};
 }
@@ -403,10 +404,10 @@ static std::vector<ParamDef> buildDefs()
         p.push_back ({ c::compMix, "Comp Mix", Section::fxComp,
                        ParamKind::floatParam, { 0.0f, 1.0f }, 1.0f, "",
                        { .enabled = true, .minNorm = 0.4f, .maxNorm = 1.0f }, {}, true });
-        p.push_back ({ c::compXoverLow, "Comp Xover L", Section::fxComp,
+        p.push_back ({ c::compXoverLow, "Comp Low Crossover", Section::fxComp,
                        ParamKind::floatParam, frequencyRange (20.0f, 2000.0f), 200.0f, "Hz",
                        { .enabled = false } });
-        p.push_back ({ c::compXoverHigh, "Comp Xover H", Section::fxComp,
+        p.push_back ({ c::compXoverHigh, "Comp High Crossover", Section::fxComp,
                        ParamKind::floatParam, frequencyRange (200.0f, 18000.0f), 2000.0f, "Hz",
                        { .enabled = false } });
 
@@ -424,10 +425,10 @@ static std::vector<ParamDef> buildDefs()
             // -60 dB would just be loud and flat), ratios stay musical, the
             // upward ratio is held near 1:1 (it lifts noise and tails), and
             // makeup gain is +/-6 dB at most.
-            p.push_back ({ id::compBand (b, c::compband::threshold), bn + "Thresh", Section::fxComp,
+            p.push_back ({ id::compBand (b, c::compband::threshold), bn + "Threshold", Section::fxComp,
                            ParamKind::floatParam, { -60.0f, 0.0f, 0.1f }, -24.0f, "dB",
                            { .enabled = true, .minNorm = 0.35f, .maxNorm = 0.8f } });
-            p.push_back ({ id::compBand (b, c::compband::ratio), bn + "Ratio", Section::fxComp,
+            p.push_back ({ id::compBand (b, c::compband::ratio), bn + "Down Ratio", Section::fxComp,
                            ParamKind::floatParam, skewedRange (1.0f, 20.0f, 4.0f), 4.0f, ":1",
                            { .enabled = true, .minNorm = 0.2f, .maxNorm = 0.65f } });
             p.push_back ({ id::compBand (b, c::compband::upRatio), bn + "Up Ratio", Section::fxComp,
@@ -439,7 +440,7 @@ static std::vector<ParamDef> buildDefs()
             p.push_back ({ id::compBand (b, c::compband::release), bn + "Release", Section::fxComp,
                            ParamKind::floatParam, skewedRange (5.0f, 2000.0f, 150.0f), timing[b].release, "ms",
                            { .enabled = false } });
-            p.push_back ({ id::compBand (b, c::compband::gain), bn + "Gain", Section::fxComp,
+            p.push_back ({ id::compBand (b, c::compband::gain), bn + "Makeup", Section::fxComp,
                            ParamKind::floatParam, { -24.0f, 24.0f, 0.1f }, 0.0f, "dB",
                            { .enabled = true, .minNorm = 0.375f, .maxNorm = 0.625f } });
         }
@@ -571,6 +572,25 @@ static std::vector<ParamDef> buildDefs()
         p.push_back ({ id::modSlotDepth (s), "Mod Slot " + juce::String (s + 1) + " Depth",
                        Section::modMatrix, ParamKind::floatParam, { -1.0f, 1.0f }, 0.0f, "",
                        { .enabled = false } });
+
+    // --- COMP rebuild: per-band knee, solo, bypass -------------------------
+    // Appended last, in their own host group, so no existing parameter's host
+    // index or RANDOMIZE draw moves. Knee 0 dB is the original hard knee, so
+    // every existing preset sounds the same. None is rolled by RANDOMIZE.
+    {
+        namespace c = id::fx;
+        const char* names[3] { "Low", "Mid", "High" };
+        for (int b = 0; b < 3; ++b)
+        {
+            const juce::String bn = juce::String ("Comp ") + names[b] + " ";
+            p.push_back ({ id::compBand (b, c::compband::knee), bn + "Knee", Section::fxCompBands,
+                           ParamKind::floatParam, { 0.0f, 24.0f, 0.1f }, 0.0f, "dB", { .enabled = false } });
+            p.push_back ({ id::compBand (b, c::compband::solo), bn + "Solo", Section::fxCompBands,
+                           ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
+            p.push_back ({ id::compBand (b, c::compband::bypass), bn + "Bypass", Section::fxCompBands,
+                           ParamKind::boolParam, {}, 0.0f, "", { .enabled = false } });
+        }
+    }
 
     return p;
 }

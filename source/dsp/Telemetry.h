@@ -68,6 +68,12 @@ struct Telemetry
     // COMP (FX module): signed per-band gain in dB (positive = upward lift,
     // negative = reduction), published once per block after the FX chain runs.
     std::array<std::atomic<float>, 3> compBandDb {};
+    // Comp rebuild: each band's detector level (dB, block peak) for the
+    // transfer-curve dot, and the module's own in/out block peaks (linear,
+    // max of L/R) for its meters. Zero / -100 while the module is off.
+    std::array<std::atomic<float>, 3> compBandLevelDb {};
+    std::atomic<float> compInPeak { 0.0f };
+    std::atomic<float> compOutPeak { 0.0f };
 
     // GRAIN (FX module): the live grain cloud for the display, published once
     // per block. back = how far behind the write head the grain is reading

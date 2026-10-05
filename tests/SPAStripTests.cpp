@@ -285,20 +285,23 @@ namespace
         constexpr int kSynthFxParamCount = 159;
         // FILTER (added after the port) is new to the strip: enable, routing, filter 1 x5, filter 2 x6.
         constexpr int kFilterParamCount = 13;
+        // COMP rebuild: knee / solo / bypass per band, in their own group.
+        constexpr int kCompBandsParamCount = 9;
         const int stripFx = params::numFxParams();
         int stripFxWithoutFilter = 0;
         for (const auto& d : params::all())
             if (d.section != params::Section::global && d.section != params::Section::sidechain
-                && d.section != params::Section::modMatrix && d.section != params::Section::fxFilter)
+                && d.section != params::Section::modMatrix && d.section != params::Section::fxFilter
+                && d.section != params::Section::fxCompBands)
                 ++stripFxWithoutFilter;
         std::cout << "  SPASynth FX parameter count: " << kSynthFxParamCount
                   << "   SPAStrip FX parameter count: " << stripFx << " (" << stripFxWithoutFilter << " ported + FILTER)\n";
         expect (stripFxWithoutFilter == kSynthFxParamCount, "the ported FX parameter count equals the synth registry's (" + juce::String (stripFxWithoutFilter) + " vs " + juce::String (kSynthFxParamCount) + ")");
-        expect (stripFx == kSynthFxParamCount + kFilterParamCount, "FX parameter count is the synth's plus the " + juce::String (kFilterParamCount) + " FILTER parameters (" + juce::String (stripFx) + ")");
+        expect (stripFx == kSynthFxParamCount + kFilterParamCount + kCompBandsParamCount, "FX parameter count is the synth's plus the " + juce::String (kFilterParamCount) + " FILTER parameters (" + juce::String (stripFx) + ")");
 
         Proc proc;
         const int hostParams = proc.getParameters().size();
-        expect (hostParams == kSynthFxParamCount + kFilterParamCount + 4 + 6 + 8, "host sees FX params + 4 globals + 6 sidechain + 8 mod-slot depths (" + juce::String (hostParams) + ")");
+        expect (hostParams == kSynthFxParamCount + kFilterParamCount + kCompBandsParamCount + 4 + 6 + 8, "host sees FX params + 4 globals + 6 sidechain + 8 mod-slot depths (" + juce::String (hostParams) + ")");
 
         std::set<juce::String> ids;
         bool unique = true;
@@ -359,9 +362,9 @@ namespace
             { "fxLim.lookahead", "Lim Lookahead",K::boolParam,   {}, 0.0f, "" },
             { "fxConv.decay",    "Conv Decay",   K::floatParam,  { 0.05f, 1.0f }, 1.0f, "" },
             { "fxConv.start",    "Conv Start",   K::floatParam,  { 0.0f, 1.0f }, 0.0f, "" },
-            { "fxComp.xoverLow", "Comp Xover L", K::floatParam,  freqRange (20.0f, 2000.0f), 200.0f, "Hz" },
-            { "fxComp.band1.ratio","Comp Mid Ratio",K::floatParam, skewRange (1.0f, 20.0f, 4.0f), 4.0f, ":1" },
-            { "fxComp.band2.thresh","Comp High Thresh",K::floatParam, { -60.0f, 0.0f, 0.1f }, -24.0f, "dB" },
+            { "fxComp.xoverLow", "Comp Low Crossover", K::floatParam,  freqRange (20.0f, 2000.0f), 200.0f, "Hz" },
+            { "fxComp.band1.ratio","Comp Mid Down Ratio",K::floatParam, skewRange (1.0f, 20.0f, 4.0f), 4.0f, ":1" },
+            { "fxComp.band2.thresh","Comp High Threshold",K::floatParam, { -60.0f, 0.0f, 0.1f }, -24.0f, "dB" },
             { "fxGrain.size",    "Glitter Size",   K::floatParam,  skewRange (5.0f, 500.0f, 120.0f), 120.0f, "ms" },
             { "fxGrain.density", "Glitter Density",K::floatParam,  skewRange (1.0f, 400.0f, 28.0f), 14.0f, "/s" },
             { "fxGrain.division","Glitter Div",    K::choiceParam, {}, 9.0f, "" },
@@ -432,7 +435,7 @@ namespace
             for (auto* node : proc.getParameterTree())
                 if (node->getGroup() != nullptr)
                     ++topGroups;
-            expect (topGroups == 15, "15 host parameter groups (Global + 12 effects + Sidechain + Mod Matrix) (got " + juce::String (topGroups) + ")");
+            expect (topGroups == 16, "16 host parameter groups (Global + 12 effects + Sidechain + Mod Matrix + Comp Bands) (got " + juce::String (topGroups) + ")");
         }
     }
 

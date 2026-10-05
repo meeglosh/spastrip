@@ -432,7 +432,8 @@ private:
 
         std::atomic<float>* compEnable = nullptr;
         FxFloat compMix, compXoverLow, compXoverHigh;
-        struct CompBand { FxFloat thresh, ratio, upRatio, attack, release, gain; };
+        struct CompBand { FxFloat thresh, ratio, upRatio, attack, release, gain, knee;
+                          std::atomic<float>* solo = nullptr; std::atomic<float>* bypass = nullptr; };
         std::array<CompBand, 3> compBands {};
 
         std::atomic<float>* grainEnable = nullptr;

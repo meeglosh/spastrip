@@ -285,7 +285,16 @@ public:
     void publishTelemetry (Telemetry& t) const
     {
         for (int b = 0; b < Multiband::numBands; ++b)
+        {
             t.compBandDb[(size_t) b].store (compEffect.bandGainDb (b), std::memory_order_relaxed);
+            t.compBandLevelDb[(size_t) b].store (compInPeak > 0.0f ? compEffect.bandLevelDb (b) : -100.0f,
+                                                 std::memory_order_relaxed);
+        }
+        // Peaks accumulate over every chunk of the host block (the modulated
+        // path splits it) and restart here, once per block.
+        t.compInPeak.store (compInPeak, std::memory_order_relaxed);
+        t.compOutPeak.store (compOutPeak, std::memory_order_relaxed);
+        compInPeak = compOutPeak = 0.0f;
         grainEffect.publish (t.grainFx);
     }
     const GrainFX& grain() const { return grainEffect; }
@@ -437,6 +446,7 @@ private:
     ParametricEQ eq;
 
     Multiband compEffect;
+    mutable float compInPeak = 0.0f, compOutPeak = 0.0f;   // see publishTelemetry
     GrainFX grainEffect;
 
     // SPAStripAdded: FILTER module. Two TPT state-variable filters (the synth's

@@ -43,6 +43,9 @@ enum class Section
     // parameter GROUP is last in allSections, so no existing parameter's host
     // index moves.
     fxFilter,
+    // Comp rebuild: per-band knee / solo / bypass. Its own host group, last,
+    // so no existing parameter's host index moves.
+    fxCompBands,
 };
 
 inline constexpr Section allSections[] = {
@@ -52,6 +55,7 @@ inline constexpr Section allSections[] = {
     Section::fxGrain,
     Section::sidechain, Section::modMatrix,
     Section::fxFilter,
+    Section::fxCompBands,
 };
 
 juce::String sectionName (Section);
@@ -236,6 +240,9 @@ namespace id
             inline constexpr const char* attack    = "attack";
             inline constexpr const char* release   = "release";
             inline constexpr const char* gain      = "gain";
+            inline constexpr const char* knee      = "knee";     // comp rebuild
+            inline constexpr const char* solo      = "solo";     // comp rebuild
+            inline constexpr const char* bypass    = "bypass";   // comp rebuild
         }
 
         // GRAIN (1.0.29): granular delay / texture.

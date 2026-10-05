@@ -45,6 +45,11 @@ public:
         float attackMs = 12.0f;
         float releaseMs = 120.0f;
         float gainDb = 0.0f;       // makeup
+        // SPAStripAdded (comp rebuild): 0 dB knee is the original hard knee,
+        // bit-identical to SPAGlitch. Solo / bypass are listening aids.
+        float kneeDb = 0.0f;
+        bool solo = false;
+        bool bypass = false;
     };
 
     struct Params
@@ -104,7 +109,7 @@ public:
 
         const float mix = juce::jlimit (0.0f, 1.0f, p.mix);
 
-        struct Settings { float attack, release, thresholdDb, downSlope, upSlope; };
+        struct Settings { float attack, release, thresholdDb, downSlope, upSlope, knee; bool bypass; };
         std::array<Settings, numBands> settings {};
         std::array<float, numBands> makeup {};
 
@@ -121,12 +126,22 @@ public:
                 // Ratio expressed as the slope of the dB-in/dB-out line, so
                 // the per-sample maths is a multiply rather than a divide.
                 1.0f - 1.0f / ratio,
-                1.0f - 1.0f / upRatio
+                1.0f - 1.0f / upRatio,
+                juce::jlimit (0.0f, 48.0f, src.kneeDb),
+                src.bypass
             };
             makeup[(size_t) b] = juce::Decibels::decibelsToGain (src.gainDb);
         }
 
+        bool anySolo = false;
+        std::array<bool, numBands> audible {};
+        for (int b = 0; b < numBands; ++b)
+            anySolo = anySolo || p.bands[(size_t) b].solo;
+        for (int b = 0; b < numBands; ++b)
+            audible[(size_t) b] = ! anySolo || p.bands[(size_t) b].solo;
+
         std::array<float, numBands> peakGainDb {};
+        std::array<float, numBands> peakLevelDb { silenceDb, silenceDb, silenceDb };
         std::array<bool, numBands> sawPeak {};
 
         auto* left  = buffer.getWritePointer (0);
@@ -155,6 +170,9 @@ public:
             const std::array<float, numBands> bandR { lowR, midR, highR };
 
             float wetL = 0.0f, wetR = 0.0f;
+            // With a band soloed the dry side of the mix is that band's own
+            // dry signal too, so MIX below 100 % never leaks the other bands.
+            float soloDryL = 0.0f, soloDryR = 0.0f;
 
             for (int b = 0; b < numBands; ++b)
             {
@@ -170,21 +188,12 @@ public:
 
                 const float levelDb = juce::Decibels::gainToDecibels (state.env, silenceDb);
 
-                float gainDb = 0.0f;
-                if (levelDb > set.thresholdDb)
-                {
-                    gainDb = -(levelDb - set.thresholdDb) * set.downSlope;
-                }
-                else if (set.upSlope > 0.0f)
-                {
-                    // Taper the lift away as the band approaches silence, so
-                    // the noise floor is never what gets compressed upward.
-                    const float taper = juce::jlimit (0.0f, 1.0f,
-                                                      (levelDb - noiseFloorDb) / taperRangeDb + 1.0f);
-                    gainDb = juce::jmin (maxUpwardDb,
-                                         (set.thresholdDb - levelDb) * set.upSlope) * taper;
-                }
+                if (levelDb > peakLevelDb[(size_t) b])
+                    peakLevelDb[(size_t) b] = levelDb;
 
+                float gainDb = set.bypass ? 0.0f
+                                          : staticGainDb (levelDb, set.thresholdDb, set.downSlope,
+                                                          set.upSlope, set.knee);
                 gainDb = juce::jlimit (-maxDownwardDb, maxUpwardDb, gainDb);
                 state.meterDb = gainDb;
 
@@ -194,14 +203,21 @@ public:
                     sawPeak[(size_t) b] = true;
                 }
 
-                const float gain = juce::Decibels::decibelsToGain (gainDb) * makeup[(size_t) b];
+                if (! audible[(size_t) b])
+                    continue;
+                const float gain = set.bypass ? 1.0f
+                                              : juce::Decibels::decibelsToGain (gainDb) * makeup[(size_t) b];
                 wetL += bandL[(size_t) b] * gain;
                 wetR += bandR[(size_t) b] * gain;
+                soloDryL += bandL[(size_t) b];
+                soloDryR += bandR[(size_t) b];
             }
 
-            left[i] = dryL + mix * (wetL - dryL);
+            const float mixDryL = anySolo ? soloDryL : dryL;
+            const float mixDryR = anySolo ? soloDryR : dryR;
+            left[i] = mixDryL + mix * (wetL - mixDryL);
             if (right != nullptr)
-                right[i] = dryR + mix * (wetR - dryR);
+                right[i] = mixDryR + mix * (wetR - mixDryR);
         }
 
         splitLow.snapToZero();
@@ -212,8 +228,52 @@ public:
         // which would otherwise be wherever the envelope happened to be at the
         // block boundary and would flicker.
         for (int b = 0; b < numBands; ++b)
+        {
             if (sawPeak[(size_t) b])
                 bands[(size_t) b].meterDb = peakGainDb[(size_t) b];
+            bands[(size_t) b].levelDb = peakLevelDb[(size_t) b];
+        }
+    }
+
+    // The band's detector level (dB, block peak), for the transfer-curve dot.
+    float bandLevelDb (int band) const
+    {
+        return juce::isPositiveAndBelow (band, numBands) ? bands[(size_t) band].levelDb : silenceDb;
+    }
+
+    // The static curve: gain (dB) applied to a band whose detector reads
+    // levelDb. Public so the editor's transfer graph draws the exact curve the
+    // audio runs (slopes are 1 - 1/ratio). kneeDb 0 is the original hard knee,
+    // evaluated with the original branches so it stays bit-identical.
+    static float staticGainDb (float levelDb, float thresholdDb, float downSlope, float upSlope, float kneeDb)
+    {
+        float gainDb = 0.0f;
+        if (kneeDb <= 0.0f)
+        {
+            if (levelDb > thresholdDb)
+                gainDb = -(levelDb - thresholdDb) * downSlope;
+            else if (upSlope > 0.0f)
+                gainDb = juce::jmin (maxUpwardDb, (thresholdDb - levelDb) * upSlope) * upwardTaper (levelDb);
+        }
+        else
+        {
+            // Quadratic soft knee on each side of the threshold: the slope
+            // eases in over kneeDb, centred on the threshold.
+            const float half = kneeDb * 0.5f;
+            const float over = levelDb - thresholdDb;
+            if (over >= half)        gainDb = -over * downSlope;
+            else if (over > -half)   gainDb = -downSlope * (over + half) * (over + half) / (2.0f * kneeDb);
+
+            if (upSlope > 0.0f)
+            {
+                const float under = -over;
+                float lift = 0.0f;
+                if (under >= half)       lift = under * upSlope;
+                else if (under > -half)  lift = upSlope * (under + half) * (under + half) / (2.0f * kneeDb);
+                gainDb += juce::jmin (maxUpwardDb, lift) * upwardTaper (levelDb);
+            }
+        }
+        return juce::jlimit (-maxDownwardDb, maxUpwardDb, gainDb);
     }
 
 private:
@@ -227,7 +287,15 @@ private:
     {
         float env = 0.0f;
         float meterDb = 0.0f;
+        float levelDb = -100.0f;
     };
+
+    // Taper the lift away as the band approaches silence, so the noise floor
+    // is never what gets compressed upward.
+    static float upwardTaper (float levelDb)
+    {
+        return juce::jlimit (0.0f, 1.0f, (levelDb - noiseFloorDb) / taperRangeDb + 1.0f);
+    }
 
     static constexpr float maxUpwardDb   = 24.0f;
     static constexpr float maxDownwardDb = 48.0f;

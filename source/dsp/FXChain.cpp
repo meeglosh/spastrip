@@ -422,7 +422,16 @@ void FXChain::processComp (juce::AudioBuffer<float>& buffer, const Params& p)
     mp.crossoverLowHz  = p.compCrossoverLow;
     mp.crossoverHighHz = p.compCrossoverHigh;
     mp.bands           = p.compBands;
+    const auto peakOf = [&buffer]
+    {
+        float peak = 0.0f;
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+            peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+        return peak;
+    };
+    compInPeak = juce::jmax (compInPeak, peakOf());
     compEffect.process (buffer, mp);
+    compOutPeak = juce::jmax (compOutPeak, peakOf());
 }
 
 void FXChain::processGrain (juce::AudioBuffer<float>& buffer, const Params& p)

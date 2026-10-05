@@ -518,13 +518,13 @@ namespace phase3Tests
 
         // The only parameters with no widget of their own are the 8 EQ bands' parameters (the EQ
         // graph edits them: X = freq, Y = gain, wheel / Cmd-drag = Q, double-click = enable,
-        // right-click = type + slope) and the COMP crossovers (two draggable markers on its graph).
+        // right-click = type + slope).
         bool onlyGraphs = true;
         for (const auto& id : missing)
-            onlyGraphs = onlyGraphs && (id.startsWith ("fxEQ.band") || id == fx::compXoverLow || id == fx::compXoverHigh);
+            onlyGraphs = onlyGraphs && id.startsWith ("fxEQ.band");
         std::cout << "        parameters without a dedicated widget: " << missing.size() << " (all edited on a graph: " << (onlyGraphs ? "yes" : "NO") << ")\n";
-        expect (onlyGraphs, "every parameter that has no widget is edited on a graph: an EQ band parameter, or a COMP crossover");
-        expect (missing.size() == 8 * 6 + 2, "...exactly the 8 x 6 per-band EQ parameters (enable, type, slope, freq, gain, q) and the 2 COMP crossover frequencies");
+        expect (onlyGraphs, "every parameter that has no widget is an EQ band parameter (edited on the EQ graph)");
+        expect (missing.size() == 8 * 6, "...exactly the 8 x 6 per-band EQ parameters (enable, type, slope, freq, gain, q); the COMP crossovers have knobs as well as graph handles");
         if (! onlyGraphs)
             std::cout << "        MISSING: " << missing.joinIntoString (", ") << "\n";
 

@@ -206,6 +206,9 @@ SPAStripProcessor::SPAStripProcessor()
         bind (cb.attack, params::id::compBand (b, fx::compband::attack));
         bind (cb.release, params::id::compBand (b, fx::compband::release));
         bind (cb.gain, params::id::compBand (b, fx::compband::gain));
+        bind (cb.knee, params::id::compBand (b, fx::compband::knee));
+        cb.solo   = rp (params::id::compBand (b, fx::compband::solo).toRawUTF8());
+        cb.bypass = rp (params::id::compBand (b, fx::compband::bypass).toRawUTF8());
     }
 
     r.grainEnable = rp (fx::grainEnable);
@@ -1110,6 +1113,9 @@ void SPAStripProcessor::updateFXParams()
         band.attackMs    = cb.attack.get();
         band.releaseMs   = cb.release.get();
         band.gainDb      = cb.gain.get();
+        band.kneeDb      = cb.knee.get();
+        band.solo        = cb.solo->load() >= 0.5f;
+        band.bypass      = cb.bypass->load() >= 0.5f;
     }
 
     p.grainEnable      = rf.grainEnable->load() >= 0.5f;
