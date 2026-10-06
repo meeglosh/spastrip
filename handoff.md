@@ -1,6 +1,6 @@
 # SPAStrip handoff
 
-**2026-10-03: 1.0.1 WITH LICENSING SENT to Paul and Phil** (main 333e4f9; dist/shopify/SPAStrip-1.0.1/ staged mac+win; NFR serials issued to Mike/Paul/Phil). Bump to 1.0.2 for anything after this. Licensing pinned in libs/spa-licensing.pin; CI needs secret SPA_LICENSING_TOKEN. Cross-product state: ~/spasynth/handoff.md top section.
+**2026-10-06: 1.0.3 SENT to Paul and Phil** (main 6759378 = the build commit; dist/shopify/SPAStrip-1.0.3/ staged mac+win). **Bump to 1.0.4 for anything after this.** 1.0.2 (10e122a) and 1.0.1 (333e4f9) also went out. Licensing pinned in libs/spa-licensing.pin; CI needs secret SPA_LICENSING_TOKEN. Cross-product state: ~/spasynth/handoff.md top section. The latest dated sections at the bottom of this file supersede older "Current state" text above them.
 
 State as of 2026-10-02. Read this before starting work in a new session.
 
@@ -11,9 +11,11 @@ chain lifted into a standalone AU (macOS) and VST3 (macOS + Windows) effect, so 
 audio source can run through it. JUCE 8.0.14 (submodule `libs/JUCE`), CMake, C++20.
 No Standalone, no AAX.
 
-- Plugin codes: manufacturer `SpAu`, plugin `SpSt`, AU type `aufx`.
-- Bundle ids: `com.silverplatteraudio.spastrip.au` / `.vst3`.
-- Version: 1.0.0 (single source: `project(SPAStrip VERSION …)` in `CMakeLists.txt`).
+- Plugin codes: manufacturer `SpAu`, plugin `SpSt`, AU type `aufx`. Since 1.0.3 a second
+  AU, "SPAStrip MIDI": target `SPAStripMIDI`, plugin `SpSm`, type `aumf`
+  (kAudioUnitType_MusicEffect), built with `SPASTRIP_AU_MIDI=1` (macOS only).
+- Bundle ids: `com.silverplatteraudio.spastrip.au` / `.vst3`, `com.silverplatteraudio.spastripmidi.au`.
+- Version: 1.0.3 (single source: `project(SPAStrip VERSION …)` in `CMakeLists.txt`).
 
 ## Current state
 
@@ -159,3 +161,43 @@ export SPASYNTH_NOTARIZE_PROFILE="SPASYNTH_NOTARY"   # fallback; ~/.config/spasy
   `docs/tester-note-1.0.2.txt`.
 - Pending: Phil's sign-off on the new COMP, then port DSP (`Multiband.h`) + panel to
   SPASynth and SPAGlitch (owner's decision: finish here first, then copy).
+
+## 2026-10-05/06: 1.0.3 (sent for testing)
+
+- Randomize All assigns modulation (`params::rollModSlots`, Randomizer.cpp): drawn after
+  the FX roll so earlier draws are unchanged; 1-3 slots at WILD 0 to 6-8 at WILD 1;
+  candidates via `isAudibleModTarget` (effect on and unlocked; never the limiter, an off
+  EQ band / filter 2, or a rate knob while synced); nothing eligible = slots kept.
+  MODULATION lock: padlock after the panel title, `modLocked` session property.
+- CHORUS VHS mode: SPASynth 1.0.32's StereoChorus verbatim (registry position identical,
+  so the synth parity test stays exact); VHS knobs shown only in VHS mode
+  (`SectionPanel::setControlVisible`); not mod targets. Also from that synth commit: the
+  reverb lo-cut Randomize guard and the uniform dense knob diameter.
+  `tests/reference/StereoChorus_1_0_2.h` = pre-VHS chorus for the identity test.
+- MIDI Learn: `source/MidiLearn.*` from SPAGlitch (also writes the APVTS raw cache).
+  `SPAStripProcessor::supportsMidiLearn()`: VST3 or the SPAStrip MIDI AU (tests use
+  `enableMidiLearnForTest`). One right-click menu per parameter control
+  (`ContentComponent::buildParameterMenu` / `applyParameterMenuResult`): MIDI items +
+  mod-slot items; `ParamToggleButton` / `ParamComboBox` route right-clicks there; EQ node
+  menu has a MIDI Learn submenu. Map = "MIDIMAP" child in host state only (stripped from
+  presets, kept across preset loads). The plain target now has NEEDS_MIDI_INPUT TRUE (for
+  VST3); its aufx AU still passes auval.
+- Installer / release: third component `SPAStripAUMIDI.pkg` (choice "Audio Unit (MIDI)");
+  `build_release.sh` builds `SPAStripMIDI_AU`, clears its dev shadow copy and verifies all
+  three payloads.
+- Staging gotcha: `--stage-only --with-windows` fetches the exe for HEAD's sha. If you commit
+  after the build commit, fetch explicitly: `scripts/fetch_windows_build.sh <build sha7> <dir>`
+  then `--stage-only <v> --windows-exe <path>`.
+- Known flaky check: BenchCpu's "4x with the convolution IR installed ... no heap
+  allocation" occasionally counts allocations from the IR worker thread; passes on rerun.
+- Branches: everything is on main. `backup/engine-pre-purge` is the pre-history-rewrite
+  safety copy: never merge it (it would reintroduce the purged history).
+
+## Next
+
+- Bump to 1.0.4 before any new work ships.
+- Phil's sign-off on the new COMP, then port `Multiband.h` + `CompPanel.h` to SPASynth and
+  SPAGlitch (owner's decision: finish in SPAStrip first).
+- Tester feedback on 1.0.3: MIDI Learn in Logic (SPAStrip MIDI via the side-chain MIDI menu)
+  and in VST3 hosts was not tried with hardware before sending.
+- Windows signing: add the AZURE_* secrets to switch on Azure Artifact Signing.
