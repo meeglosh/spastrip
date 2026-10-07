@@ -144,6 +144,128 @@ namespace phase3Tests
     }
 
     //==========================================================================
+    // Tooltips: JUCE shows the next tip instantly when the pointer moves from one
+    // control to another within 500 ms of a tip (TooltipWindow::timerCallback).
+    // DelayedTooltipWindow makes every control wait the full delay.
+    void tooltipDelayEveryControlTest()
+    {
+        std::cout << "tooltipDelayEveryControlTest\n";
+        {
+            ui::TooltipDelayGate gate (700);
+            int a = 0, b = 0;
+            juce::uint32 t = 1000;
+            bool shownA = false;
+            for (; t <= 2000; t += 120)
+                shownA = gate.allow (&a, t) || shownA;
+            expect (shownA, "tip for A appears after resting on it");
+            t += 120;
+            expect (! gate.allow (&b, t), "moving A->B does not show B's tip immediately");
+            bool shownB = false;
+            int polls = 0;
+            for (; ! shownB && polls < 20; ++polls) { t += 120; shownB = gate.allow (&b, t); }
+            expect (shownB && polls >= 5 && polls <= 7, "B shows only after the full delay (polls: " + juce::String (polls) + ")");
+            t += 5000;
+            expect (! gate.allow (&b, t), "returning to B after leaving waits again");
+        }
+        {
+            struct Tipped : juce::Component, juce::TooltipClient
+            {
+                juce::String getTooltip() override { return "tip"; }
+            };
+            ForceLive live;
+            auto proc = makeProc (48000.0, 256);
+            auto ed = openEditor (*proc);
+            ui::DelayedTooltipWindow* win = nullptr;
+            for (auto* c : ed->getChildren())
+                if (win == nullptr)
+                    win = dynamic_cast<ui::DelayedTooltipWindow*> (c);
+            expect (win != nullptr, "editor owns a DelayedTooltipWindow");
+            if (win != nullptr)
+            {
+                Tipped a, b;
+                ed->addAndMakeVisible (a);
+                ed->addAndMakeVisible (b);
+                juce::uint32 now = 5000;
+                win->clock = [&now] { return now; };
+                win->baseTipForTest = [] (juce::Component& c) { return dynamic_cast<juce::TooltipClient*> (&c)->getTooltip(); };
+                const auto poll = [&] (juce::Component& c, int ms)
+                {
+                    juce::String tip;
+                    for (int t = 0; t < ms; t += 120) { now += 120; tip = win->getTipFor (c); }
+                    return tip;
+                };
+                expect (poll (a, 240).isEmpty(), "A's tip is withheld early in the hover");
+                expect (poll (a, 720) == "tip", "A's tip is returned after the delay");
+                expect (poll (b, 120).isEmpty(), "B's tip is withheld right after moving from A");
+                expect (poll (b, 240).isEmpty(), "B's tip still withheld at ~360 ms");
+                expect (poll (b, 480) == "tip", "B's tip is returned after its own full delay");
+                win->clock = nullptr;
+                win->baseTipForTest = nullptr;
+            }
+        }
+    }
+
+    // LIMIT captions read in full ("STEREO LINK", "LOOK AHEAD") and every
+    // caption in the panel fits its own cell (a Label loses 5 px a side).
+    void limiterCaptionsTest()
+    {
+        std::cout << "limiterCaptionsTest\n";
+        ForceLive live;
+        auto proc = makeProc (48000.0, 256);
+        auto ed = openEditor (*proc);
+
+        auto& tabs = ed->getContent().getFxTabs();
+        const int idx = tabs.getTabNames().indexOf ("LIMIT");
+        expect (idx >= 0, "LIMIT tab found");
+        if (idx < 0)
+            return;
+        tabs.setCurrentTabIndex (idx);
+        pump (10);
+
+        auto* panel = tabs.getCurrentContentComponent();
+        expect (panel != nullptr && panel->getWidth() > 0, "LIMIT panel found and laid out");
+        if (panel == nullptr)
+            return;
+
+        bool sawLink = false, sawLook = false;
+        int checked = 0;
+        std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+        {
+            if (auto* lbl = dynamic_cast<juce::Label*> (&c))
+            {
+                if (lbl->getText().isNotEmpty() && dynamic_cast<juce::ComboBox*> (lbl->getParentComponent()) == nullptr
+                    && dynamic_cast<juce::Slider*> (lbl->getParentComponent()) == nullptr)
+                {
+                    ++checked;
+                    sawLink = sawLink || lbl->getText() == "STEREO LINK";
+                    const auto need = juce::GlyphArrangement::getStringWidth (lbl->getFont(), lbl->getText());
+                    expect ((float) lbl->getWidth() - 10.0f >= need,
+                            "caption '" + lbl->getText() + "' fits (" + juce::String (need, 1) + "px needed, "
+                                + juce::String (lbl->getWidth() - 10) + " available)");
+                }
+            }
+            else if (auto* tb = dynamic_cast<juce::ToggleButton*> (&c))
+            {
+                if (tb->getButtonText().isNotEmpty())
+                {
+                    ++checked;
+                    sawLook = sawLook || tb->getButtonText().equalsIgnoreCase ("LOOK AHEAD");
+                    const auto need = juce::GlyphArrangement::getStringWidth (ui::metrics::smallFont(),
+                                                                              tb->getButtonText().toUpperCase());
+                    expect ((float) tb->getWidth() - (14.0f * 1.9f + 5.0f) >= need,
+                            "toggle '" + tb->getButtonText() + "' fits its bounds");
+                }
+            }
+            for (auto* ch : c.getChildren())
+                walk (*ch);
+        };
+        walk (*panel);
+        expect (checked > 0, "limiter captions were checked");
+        expect (sawLink, "link knob is captioned STEREO LINK");
+        expect (sawLook, "lookahead toggle is captioned LOOK AHEAD");
+    }
+
+    //==========================================================================
     void tabOrderSyncTest()
     {
         std::cout << "tabOrderSyncTest\n";

@@ -130,11 +130,11 @@ public:
           drive   (apvts, params::id::fx::limDrive, "Drive"),
           ceiling (apvts, params::id::fx::limCeiling, "Ceiling"),
           release (apvts, params::id::fx::limRelease, "Release"),
-          link    (apvts, params::id::fx::limStereoLink, "Link"),
+          link    (apvts, params::id::fx::limStereoLink, "Stereo Link"),
           character (apvts, params::id::fx::limCharacter),
           autoRel (apvts, params::id::fx::limAutoRelease, "AUTO REL"),
           truePeak (apvts, params::id::fx::limTruePeak, "TRUE PK"),
-          lookahead (apvts, params::id::fx::limLookahead, "LOOK"),
+          lookahead (apvts, params::id::fx::limLookahead, "LOOK AHEAD"),
           autoGain (apvts, params::id::fx::limAutoGain, "AUTO GAIN")
     {
         autoGain.button.setTooltip ("Compensate the drive at the output, so drive "
@@ -164,7 +164,9 @@ public:
 
         for (auto* k : { &drive, &ceiling, &release, &link })
         {
-            k->setBounds (strip.removeFromLeft (64));
+            // 68 px: "STEREO LINK" needs ~55 px of caption plus the Label's 10 px
+            // border; all four cells stay equal so the knobs share one diameter.
+            k->setBounds (strip.removeFromLeft (68));
             strip.removeFromLeft (2);
         }
         strip.removeFromLeft (14);

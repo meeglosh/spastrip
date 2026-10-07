@@ -1502,6 +1502,8 @@ int main (int argc, char** argv)
     RUN (phase3Tests::drawerAndDialogsTest);
     RUN (phase3Tests::metersAndSidechainUiTest);
     RUN (phase3Tests::accentSettingsTest);
+    RUN (phase3Tests::tooltipDelayEveryControlTest);
+    RUN (phase3Tests::limiterCaptionsTest);
 
     // --- Preset management: types, folders, drawer, save panel, export / import ----
     RUN (presetTests::presetTypeRoundTripTest);

@@ -6,6 +6,7 @@
 #include "ConvolvePanel.h"
 #include "Controls.h"
 #include "Dialogs.h"
+#include "DelayedTooltipWindow.h"
 #include "DraggableTabs.h"
 #include "FxPanel.h"
 #include "ModViz.h"
@@ -228,7 +229,7 @@ public:
 private:
     SPAStripProcessor& stripProcessor;
     ui::SPAStripLookAndFeel lookAndFeel;
-    juce::TooltipWindow tooltips { this };
+    spa::ui::DelayedTooltipWindow tooltips { this };
     std::unique_ptr<ui::ContentComponent> content;
     int resizedCalls = 0;
     bool suppressScaleSave = false;
