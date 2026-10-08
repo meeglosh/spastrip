@@ -115,11 +115,12 @@ double FXChain::tailSeconds (const Params& p) const
         const auto time = p.delaySync
                         ? params::lfoDivisionBeats (p.delayDivision) * 60.0 / p.bpm
                         : (double) p.delayTimeMs * 0.001;
-        // Feedback ring-out to roughly -60 dB.
+        // Real -60 dB feedback ring-out; ceiling 300 s (was 12 s, which hosts
+        // used as the stop point and so cut long delay decays off).
         const auto repeats = p.delayFeedback > 0.01f
                            ? std::log (0.001) / std::log ((double) p.delayFeedback)
                            : 1.0;
-        tail = juce::jlimit (0.0, 12.0, time * repeats);
+        tail = juce::jlimit (0.0, 300.0, time * repeats);
     }
 
     if (p.reverbEnable)
@@ -136,15 +137,15 @@ double FXChain::tailSeconds (const Params& p) const
         // The cloud keeps reading what is already in the ring: up to POSITION
         // (+ the spread jitter) behind, plus one grain, then the feedback
         // repeats, same ring-out rule as the delay. A held (frozen) ring never
-        // ends, so it is capped at the ring length like the delay's 12 s.
+        // ends, so it is capped at 300 s like the delay.
         const double reach = (double) p.grainPositionMs * 0.001 + 0.25 + (double) p.grainSizeMs * 0.001;
         const auto repeats = p.grainFeedback > 0.01f
                            ? std::log (0.001) / std::log ((double) p.grainFeedback)
                            : 1.0;
-        tail = juce::jmax (tail, juce::jlimit (0.0, 12.0, reach * repeats));
+        tail = juce::jmax (tail, juce::jlimit (0.0, 300.0, reach * repeats));
         // RELEASE rings out for its own time (infinite = held = the same cap).
         if (p.grainReleaseSec >= GrainFX::minRelease)
-            tail = juce::jmax (tail, juce::jlimit (0.0, 12.0, reach + (double) p.grainReleaseSec));
+            tail = juce::jmax (tail, juce::jlimit (0.0, 300.0, reach + (double) p.grainReleaseSec));
     }
 
     return tail;

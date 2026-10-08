@@ -960,4 +960,28 @@ static void plateReverbIndexStressTest()
             "every mode x rate x size x modDepth combination ran (" + juce::String (combosRun) + ")");
 }
 
+// Reported tail = real -60 dB feedback ring-out, ceiling 300 s. It was clamped
+// to 12 s, so hosts stopped there and cut long delay decays off.
+static void delayTailLengthTest()
+{
+    std::cout << "delayTailLengthTest\n";
+    spa::dsp::FXChain fx;
+    auto tailFor = [&] (float ms, float fb)
+    {
+        spa::dsp::FXChain::Params p;
+        p.reverbEnable = false; p.convEnable = false; p.grainEnable = false;
+        p.delayEnable = true; p.delaySync = false; p.delayTimeMs = ms; p.delayFeedback = fb;
+        return fx.tailSeconds (p);
+    };
+    expect (std::abs (tailFor (350.0f, 0.95f) - 47.1) < 0.3, "350 ms / 0.95 -> ~47 s");
+    expect (std::abs (tailFor (350.0f, 0.80f) - 10.8) < 0.1, "350 ms / 0.80 -> ~10.8 s");
+    expect (std::abs (tailFor (2000.0f, 0.95f) - 269.4) < 0.5, "2 s / 0.95 -> ~269 s");
+    expect (tailFor (4000.0f, 0.999f) <= 300.0 && tailFor (4000.0f, 0.999f) > 299.99, "ceiling 300 s holds");
+
+    spa::dsp::FXChain::Params g;
+    g.reverbEnable = false; g.convEnable = false; g.delayEnable = false; g.grainEnable = true;
+    g.grainPositionMs = 4000.0f; g.grainSizeMs = 500.0f; g.grainFeedback = 0.999f; g.grainReleaseSec = 0.0f;
+    expect (fx.tailSeconds (g) > 12.0 && fx.tailSeconds (g) <= 300.0, "GLITTER tail not capped at 12 s, ceiling 300 s");
+}
+
 } // namespace fxEngineTests

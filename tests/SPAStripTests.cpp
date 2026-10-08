@@ -1423,6 +1423,7 @@ int main (int argc, char** argv)
     RUN (fxEngineTests::delayWidthZeroMatchesPreChangeAlgorithmTest);
     RUN (fxEngineTests::reverbArrivalFollowsPreDelayTest);
     RUN (fxEngineTests::plateReverbIndexStressTest);
+    RUN (fxEngineTests::delayTailLengthTest);
 
     // --- SPAStrip processor ------------------------------------------------
     RUN (passthroughTest);
