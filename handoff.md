@@ -1,5 +1,7 @@
 # SPAStrip handoff
 
+**2026-10-08: 1.0.4 BUILT and staged, NOT sent** (macOS only; Windows exe pending CI for the build commit; see artifacts below). Bump to 1.0.5 once it is sent. Tester note docs/tester-note-1.0.4.txt, changelog docs/CHANGELOG.md.
+
 **2026-10-08: SPAStrip adopts the shared spa-fx module (uncommitted working tree, next build is 1.0.4).** Pin `libs/spa-fx.pin` (fetch: `scripts/fetch_spa_fx.sh`, CMake `libs/spa-fx` or `SPA_FX_DIR`/`-DSPASTRIP_SPA_FX_DIR`; CI reuses `SPA_LICENSING_TOKEN`, which must also be granted Contents: Read on meeglosh/spa-fx). Reverb, delay, dist, chorus, mod, trem/vib, EQ, COMP, GLITTER, limiter, FILTER and the CONV IR shaping now come from spa-fx; the frozen 1.0.3 code is in `tests/legacy/` (`FXChain_103.h` = the whole old chain) with bit-identity tests in `tests/SpaFxTests.inc`. Intended changes: reverb level normalisation, GLITTER RELEASE tail fix, FREEZE removed (loads as RELEASE max), EQ analyzer PRE/POST tap at the EQ's chain position, Ozone-style LIMIT panel. SPAStrip's `source/dsp/*.h` are now thin shims over spa-fx.
 
 
@@ -18,7 +20,7 @@ No Standalone, no AAX.
   AU, "SPAStrip MIDI": target `SPAStripMIDI`, plugin `SpSm`, type `aumf`
   (kAudioUnitType_MusicEffect), built with `SPASTRIP_AU_MIDI=1` (macOS only).
 - Bundle ids: `com.silverplatteraudio.spastrip.au` / `.vst3`, `com.silverplatteraudio.spastripmidi.au`.
-- Version: 1.0.3 (single source: `project(SPAStrip VERSION …)` in `CMakeLists.txt`).
+- Version: 1.0.4 (single source: `project(SPAStrip VERSION …)` in `CMakeLists.txt`).
 
 ## Current state
 

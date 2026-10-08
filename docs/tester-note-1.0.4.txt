@@ -1,0 +1,52 @@
+SPAStrip 1.0.4
+
+My dudes,
+
+This one brings SPAStrip onto the same effects as SPASynth 1.0.33: steadier reverb level, long tails that ring out, and a redesigned LIMIT panel.
+
+CHANGES THAT ARE ON PURPOSE (please don't report these as bugs)
+- Reverb at a short DECAY or a large SIZE is now audible. It used to
+  nearly vanish there, and small SIZE used to jump out. Level is now
+  steady across the range. Existing sessions with reverb will sound a
+  little different.
+- GLITTER's FREEZE switch is gone. RELEASE at its maximum holds the cloud.
+  Old sessions with FREEZE on open with RELEASE at max.
+- The LIMIT panel shows THRESHOLD instead of DRIVE. Existing sessions
+  sound the same.
+
+WHAT'S NEW
+- Reverb level is steady across SIZE and DECAY in every mode.
+- Long delay and GLITTER tails are no longer cut off by the host. This
+  fixes Phil's report of delay tails stopping early.
+- GLITTER RELEASE now lasts as long as the knob says (30 s fades in about
+  30 s). With PITCH or SPREAD PITCH it still leaves the audible range
+  sooner, by nature.
+- EQ analyzer PRE / POST now show the signal entering and leaving the EQ,
+  wherever it sits in the chain.
+- LIMIT panel redesign: THRESHOLD and CEILING faders between the input
+  and output meters, with a link icon. Captions read LOOK AHEAD and
+  STEREO LINK.
+- Tooltips wait a moment before appearing when you move between controls.
+
+INSTALL
+1. Quit your DAW first (the Mac installer will ask you to if Logic,
+   MainStage or GarageBand is open).
+2. Run the installer (Mac .pkg, Windows .exe). Windows is still unsigned:
+   click "More info" > "Run anyway".
+3. Logic: if SPAStrip doesn't show up, Plug-in Manager > Reset & Rescan
+   Selection, then restart Logic.
+
+PLEASE TEST (A/B against 1.0.3 where you can)
+4. Reverb: in every mode, sweep SIZE 0 to 100 and DECAY 0.25 s to 8 s.
+   Does the level feel even? Anything that vanishes, jumps out or sounds
+   too quiet or too loud?
+5. Delay: set a long, high-feedback tail, play a note and bounce or stop
+   the transport. Does the tail ring out in full?
+6. GLITTER: RELEASE at 30 s, then at max. Does 30 s last about 30 s? Does
+   max hold until you move it? Open an old session that used FREEZE.
+7. LIMIT panel: use the THRESHOLD / CEILING faders and the link icon.
+   Anything unclear, misdrawn or clipped?
+8. EQ analyzer: move the EQ in the chain and compare PRE and POST.
+9. Tooltips: move between controls. Do they wait a beat before showing?
+
+Anything odd, send me the preset and what you were doing.
