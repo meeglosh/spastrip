@@ -1,8 +1,8 @@
 name: Build
 
+# Manual only: Windows runners bill at 2x, so builds run on demand
+# (Actions tab > Run workflow) instead of on every push.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 # A newer push supersedes any still-running build of the same ref.
