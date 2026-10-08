@@ -176,6 +176,22 @@ juce_add_binary_data(SPAStripBranding
     SOURCES assets/branding/SPAudio_logo_white.svg)
 set_target_properties(SPAStripBranding PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Shared FX module (spa-fx, namespace spa::fx). Checked out (gitignored) at
+# libs/spa-fx at the commit pinned in libs/spa-fx.pin by scripts/fetch_spa_fx.sh
+# (locally by build_release.sh, in CI by actions/checkout). To build against a
+# local checkout such as ~/spa-fx instead, set SPA_FX_DIR in the environment or
+# -DSPASTRIP_SPA_FX_DIR=... .
+set(_spa_fx_default "${CMAKE_CURRENT_SOURCE_DIR}/libs/spa-fx")
+if(DEFINED ENV{SPA_FX_DIR} AND NOT "$ENV{SPA_FX_DIR}" STREQUAL "")
+    set(_spa_fx_default "$ENV{SPA_FX_DIR}")
+endif()
+set(SPASTRIP_SPA_FX_DIR "${_spa_fx_default}" CACHE PATH "Path to a spa-fx checkout")
+if(NOT EXISTS "${SPASTRIP_SPA_FX_DIR}/spa_fx/PlateReverb.h")
+    message(FATAL_ERROR "spa-fx module not found at '${SPASTRIP_SPA_FX_DIR}'. Run scripts/fetch_spa_fx.sh "
+        "or set SPA_FX_DIR / -DSPASTRIP_SPA_FX_DIR to a spa-fx checkout (e.g. ~/spa-fx).")
+endif()
+message(STATUS "SPAStrip spa-fx: ${SPASTRIP_SPA_FX_DIR}")
+
 set(SPASTRIP_SOURCES
     source/SPAStripProcessor.cpp
     source/SPAStripProcessorEdit.cpp
@@ -206,7 +222,7 @@ endif()
 foreach(_plugin ${SPASTRIP_PLUGIN_TARGETS})
 target_sources(${_plugin} PRIVATE ${SPASTRIP_SOURCES})
 
-target_include_directories(${_plugin} PRIVATE source ${SPASTRIP_GENERATED_DIR})
+target_include_directories(${_plugin} PRIVATE source ${SPASTRIP_GENERATED_DIR} "${SPASTRIP_SPA_FX_DIR}")
 
 target_compile_definitions(${_plugin} PRIVATE
     JUCE_WEB_BROWSER=0
@@ -292,7 +308,7 @@ if(SPASTRIP_BUILD_TESTS)
 
     juce_add_console_app(SPAStripTests PRODUCT_NAME "SPAStripTests")
     target_sources(SPAStripTests PRIVATE tests/SPAStripTests.cpp ${SPASTRIP_SOURCES})
-    target_include_directories(SPAStripTests PRIVATE source ${SPASTRIP_GENERATED_DIR})
+    target_include_directories(SPAStripTests PRIVATE source ${SPASTRIP_GENERATED_DIR} "${SPASTRIP_SPA_FX_DIR}")
     target_compile_definitions(SPAStripTests PRIVATE
         SPASTRIP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
         SPASTRIP_MOD_AUDIT=1
@@ -331,7 +347,7 @@ option(SPASTRIP_BUILD_SNAPSHOTS "Build the editor screenshot tool" ON)
 if(SPASTRIP_BUILD_SNAPSHOTS)
     juce_add_console_app(SPAStripSnapshots PRODUCT_NAME "SPAStripSnapshots")
     target_sources(SPAStripSnapshots PRIVATE tools/SPAStripSnapshots.cpp ${SPASTRIP_SOURCES})
-    target_include_directories(SPAStripSnapshots PRIVATE source ${SPASTRIP_GENERATED_DIR})
+    target_include_directories(SPAStripSnapshots PRIVATE source ${SPASTRIP_GENERATED_DIR} "${SPASTRIP_SPA_FX_DIR}")
     target_compile_definitions(SPAStripSnapshots PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0

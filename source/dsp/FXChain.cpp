@@ -7,13 +7,7 @@ void FXChain::prepare (double newSampleRate, int maxBlockSize)
 {
     sampleRate = newSampleRate;
 
-    const juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) maxBlockSize, 2 };
-
-    for (auto& f : toneFilters)
-    {
-        f.prepare ({ sampleRate, (juce::uint32) maxBlockSize, 1 });
-        f.setType (juce::dsp::FirstOrderTPTFilterType::lowpass);
-    }
+    distortion.prepare (sampleRate);
 
     chorusEffect.prepare (sampleRate, maxBlockSize);
     modEffect.prepare (sampleRate, maxBlockSize);
@@ -65,45 +59,32 @@ void FXChain::prepare (double newSampleRate, int maxBlockSize)
     // oversampling changes (prepare resets the convolution engine).
     if (haveRawIR) reshapeConvolutionIR();
 
-    delayBuffer.setSize (2, (int) (sampleRate * 4.0) + 8);
-    delayBuffer.clear();
-    delayWritePos = 0;
-    delaySamplesSmoothed.reset (sampleRate, 0.1);
-    delayWidthSmoothed.reset (sampleRate, 0.05);
+    delay.prepare (sampleRate);
 
     reverb.prepare (sampleRate, maxBlockSize);
 
     eq.prepare (sampleRate, maxBlockSize);
     compEffect.prepare (sampleRate, maxBlockSize);
     grainEffect.prepare (sampleRate, maxBlockSize);
-    for (auto& slot : filterSlots)    // SPAStripAdded
-        slot.filter.prepare (sampleRate);
+    filterModule.prepare (sampleRate);
 
     reset();
 }
 
 void FXChain::reset()
 {
-    for (auto& f : toneFilters)
-        f.reset();
-    crushHold.fill (0.0f);
-    crushPhase.fill (0.0f);
+    distortion.reset();
     chorusEffect.reset();
     modEffect.reset();
     tremVibEffect.reset();
     limiterEffect.reset();
     convolution->reset();
-    delayBuffer.clear();
+    delay.reset();
     reverb.reset();
     eq.reset();
     compEffect.reset();
     grainEffect.reset();
-    for (auto& slot : filterSlots)    // SPAStripAdded
-    {
-        slot.filter.reset();
-        slot.wasOn = false;
-        slot.haveApplied = false;
-    }
+    filterModule.reset();
 }
 
 double FXChain::tailSeconds (const Params& p) const
@@ -115,12 +96,8 @@ double FXChain::tailSeconds (const Params& p) const
         const auto time = p.delaySync
                         ? params::lfoDivisionBeats (p.delayDivision) * 60.0 / p.bpm
                         : (double) p.delayTimeMs * 0.001;
-        // Real -60 dB feedback ring-out; ceiling 300 s (was 12 s, which hosts
-        // used as the stop point and so cut long delay decays off).
-        const auto repeats = p.delayFeedback > 0.01f
-                           ? std::log (0.001) / std::log ((double) p.delayFeedback)
-                           : 1.0;
-        tail = juce::jlimit (0.0, 300.0, time * repeats);
+        // Real -60 dB feedback ring-out (spa-fx), ceiling 300 s.
+        tail = spa::fx::Delay::tailSeconds (time, (double) p.delayFeedback);
     }
 
     if (p.reverbEnable)
@@ -129,23 +106,17 @@ double FXChain::tailSeconds (const Params& p) const
     if (p.convEnable)
         // Pre-delay gap + the (reshaped) IR's own length; hosts truncate the
         // tail on bounce/freeze otherwise, clipping the reverb-style ring-out.
-        tail = juce::jmax (tail, (double) p.convPreDelay * 0.001
-                                + irLengthSeconds.load (std::memory_order_relaxed));
+        tail = juce::jmax (tail, spa::fx::Convolver::tailSeconds (
+                                     p.convPreDelay, irLengthSeconds.load (std::memory_order_relaxed)));
 
     if (p.grainEnable)
     {
-        // The cloud keeps reading what is already in the ring: up to POSITION
-        // (+ the spread jitter) behind, plus one grain, then the feedback
-        // repeats, same ring-out rule as the delay. A held (frozen) ring never
-        // ends, so it is capped at 300 s like the delay.
-        const double reach = (double) p.grainPositionMs * 0.001 + 0.25 + (double) p.grainSizeMs * 0.001;
-        const auto repeats = p.grainFeedback > 0.01f
-                           ? std::log (0.001) / std::log ((double) p.grainFeedback)
-                           : 1.0;
-        tail = juce::jmax (tail, juce::jlimit (0.0, 300.0, reach * repeats));
-        // RELEASE rings out for its own time (infinite = held = the same cap).
-        if (p.grainReleaseSec >= GrainFX::minRelease)
-            tail = juce::jmax (tail, juce::jlimit (0.0, 300.0, reach + (double) p.grainReleaseSec));
+        // Shared rule (spa-fx): feedback ring-out or RELEASE seconds; RELEASE at
+        // its top holds forever and reports the 300 s ceiling.
+        GrainFX::Params gp;
+        gp.positionMs = p.grainPositionMs; gp.sizeMs = p.grainSizeMs;
+        gp.feedback = p.grainFeedback; gp.releaseSec = p.grainReleaseSec;
+        tail = juce::jmax (tail, GrainFX::tailSeconds (gp));
     }
 
     return tail;
@@ -165,7 +136,10 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, const Params& params)
             case Module::chorus:     processChorus (buffer, params); break;
             case Module::delay:      if (params.delayEnable)  processDelay (buffer, params); break;
             case Module::reverb:     if (params.reverbEnable) processReverb (buffer, params); break;
-            case Module::eq:         if (params.eqEnable)     processEQ (buffer, params); break;
+            case Module::eq:         tapEq (buffer, true);
+                                     if (params.eqEnable)     processEQ (buffer, params);
+                                     tapEq (buffer, false);
+                                     break;
             // Always invoke (rather than gating on modEnable like the other
             // modules) so ModEffect's own enable-edge tracking sees every
             // disable; that's what lets it clear its trapped allpass/
@@ -198,63 +172,14 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, const Params& params)
 
 void FXChain::processDistortion (juce::AudioBuffer<float>& buffer, const Params& p)
 {
-    const auto driveGain = 1.0f + 15.0f * p.distDrive;
-
-    for (auto& f : toneFilters)
-        f.setCutoffFrequency (p.distToneHz);
-
-    // Crush (bit-depth + sample-rate reduction) params, driven entirely by
-    // DRIVE via the exponential mappings shared with the UI curve (see
-    // crushBitsForDrive/crushHoldForDrive) so the knob stays useful across
-    // its whole range instead of spending half its travel inaudible.
-    const auto crushLevels = std::pow (2.0f, crushBitsForDrive (p.distDrive));
-    const auto crushHoldLen = crushHoldForDrive (p.distDrive, sampleRate);
-
-    for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
-    {
-        auto* data = buffer.getWritePointer (ch);
-        auto& tone = toneFilters[(size_t) ch];
-
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
-        {
-            const auto dry = data[i];
-
-            float wet;
-            if (p.distType == 3)
-            {
-                // Bit-depth quantise the unscaled input (no drive boost --
-                // that would just clip everything at high bit-crush amounts).
-                const auto quantised = std::round (dry * crushLevels) / crushLevels;
-
-                // Sample-and-hold decimation: advance the phase each sample;
-                // only latch a new held value once the accumulated hold
-                // length has been reached, else repeat the last one.
-                auto& hold = crushHold[(size_t) ch];
-                auto& phase = crushPhase[(size_t) ch];
-                if (phase <= 0.0f)
-                {
-                    hold = quantised;
-                    phase = crushHoldLen;
-                }
-                phase -= 1.0f;
-
-                wet = tone.processSample (0, hold);
-            }
-            else
-            {
-                const auto x = dry * driveGain;
-                switch (p.distType)
-                {
-                    case 1:  wet = juce::jlimit (-1.0f, 1.0f, x); break;              // Hard
-                    case 2:  wet = std::sin (x * 1.2f); break;                        // Fold
-                    default: wet = std::tanh (x); break;                              // Soft
-                }
-                wet = tone.processSample (0, wet / std::sqrt (driveGain));
-            }
-
-            data[i] = dry + (wet - dry) * p.distMix;
-        }
-    }
+    spa::fx::Distortion::Params dp;
+    dp.type = p.distType;
+    dp.drive = p.distDrive;
+    dp.toneHz = p.distToneHz;
+    dp.mix = p.distMix;
+    distortion.process (buffer.getWritePointer (0),
+                        buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+                        buffer.getNumSamples(), dp);
 }
 
 void FXChain::processChorus (juce::AudioBuffer<float>& buffer, const Params& p)
@@ -279,63 +204,17 @@ void FXChain::processChorus (juce::AudioBuffer<float>& buffer, const Params& p)
 
 void FXChain::processDelay (juce::AudioBuffer<float>& buffer, const Params& p)
 {
-    const auto timeSeconds = p.delaySync
-                           ? params::lfoDivisionBeats (p.delayDivision) * 60.0 / p.bpm
-                           : (double) p.delayTimeMs * 0.001;
-    const auto targetSamples = (float) juce::jlimit (
-        32.0, (double) delayBuffer.getNumSamples() - 8.0, timeSeconds * sampleRate);
-    delaySamplesSmoothed.setTargetValue (targetSamples);
-    delayWidthSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, p.delayWidth));
-
-    const auto bufLen = delayBuffer.getNumSamples();
-    auto* bufL = delayBuffer.getWritePointer (0);
-    auto* bufR = delayBuffer.getWritePointer (1);
-    auto* left = buffer.getWritePointer (0);
-    auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : left;
-
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
-    {
-        const auto delaySamples = delaySamplesSmoothed.getNextValue();
-
-        auto readPos = (double) delayWritePos - (double) delaySamples;
-        while (readPos < 0.0)
-            readPos += (double) bufLen;
-
-        auto r0 = (int) readPos;
-        const auto frac = (float) (readPos - (double) r0);
-        while (r0 >= bufLen) r0 -= bufLen;   // wrap can round to exactly bufLen -- see FDNReverb.h
-        const auto r1 = (r0 + 1) % bufLen;
-
-        const auto outL = bufL[r0] + frac * (bufL[r1] - bufL[r0]);
-        const auto outR = bufR[r0] + frac * (bufR[r1] - bufR[r0]);
-
-        // Ping-pong crosses the feedback paths. WIDTH (only meaningful with
-        // ping-pong on) blends the INJECTION from today's behaviour (w=0:
-        // left into the left line, right into the right line) to true
-        // ping-pong (w=1: the mono sum injected into the left line only, so
-        // a centred source actually bounces instead of arriving on both
-        // sides at once). Equal-power (0.70710678 = 1/sqrt(2)) so a centred
-        // source keeps roughly the same echo energy across the width range.
-        // Width is a no-op when ping-pong is off -- inL/inR just equal
-        // left[i]/right[i], bit-identical to the pre-1.0.25 algorithm.
-        float inL = left[i];
-        float inR = right[i];
-        if (p.delayPingPong)
-        {
-            const auto w = delayWidthSmoothed.getNextValue();
-            const auto monoSum = (left[i] + right[i]) * 0.70710678f;
-            inL = (1.0f - w) * left[i] + w * monoSum;
-            inR = (1.0f - w) * right[i];
-        }
-
-        bufL[delayWritePos] = inL + (p.delayPingPong ? outR : outL) * p.delayFeedback;
-        bufR[delayWritePos] = inR + (p.delayPingPong ? outL : outR) * p.delayFeedback;
-
-        left[i] += outL * p.delayMix;
-        right[i] += outR * p.delayMix;
-
-        delayWritePos = (delayWritePos + 1) % bufLen;
-    }
+    spa::fx::Delay::Params dp;
+    dp.timeSeconds = p.delaySync
+                   ? params::lfoDivisionBeats (p.delayDivision) * 60.0 / p.bpm
+                   : (double) p.delayTimeMs * 0.001;
+    dp.feedback = p.delayFeedback;
+    dp.pingPong = p.delayPingPong;
+    dp.width = p.delayWidth;
+    dp.mix = p.delayMix;
+    delay.process (buffer.getWritePointer (0),
+                   buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+                   buffer.getNumSamples(), dp);
 }
 
 void FXChain::processReverb (juce::AudioBuffer<float>& buffer, const Params& p)
@@ -357,7 +236,9 @@ void FXChain::processReverb (juce::AudioBuffer<float>& buffer, const Params& p)
     rp.highCutHz = p.reverbHighCut;
     rp.width = p.reverbWidth;
     rp.mix = p.reverbMix;
-    reverb.process (buffer, rp);
+    reverb.process (buffer.getWritePointer (0),
+                    buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+                    buffer.getNumSamples(), rp);
 }
 
 void FXChain::processMod (juce::AudioBuffer<float>& buffer, const Params& p)
@@ -414,7 +295,14 @@ void FXChain::processLimiter (juce::AudioBuffer<float>& buffer, const Params& p)
     lp.truePeak    = p.limTruePeak;
     lp.lookahead   = p.limLookahead;
     lp.autoGain    = p.limAutoGain;
+    {
+        float inPk = 0.0f;
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+            inPk = juce::jmax (inPk, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+        limInPeak = juce::jmax (limInPeak, inPk);
+    }
     limiterEffect.process (buffer, lp);
+    limOutPeak = juce::jmax (limOutPeak, limiterEffect.outputPeak());
 }
 
 int FXChain::limiterLatencySamples (const Params& p) const
@@ -461,7 +349,6 @@ void FXChain::processGrain (juce::AudioBuffer<float>& buffer, const Params& p)
     gp.reverse    = p.grainReverse;
     gp.feedback   = p.grainFeedback;
     gp.mix        = p.grainMix;
-    gp.freeze     = p.grainFreeze;
     gp.releaseSec = p.grainReleaseSec;
     grainEffect.process (buffer, gp);
 }
@@ -476,148 +363,22 @@ std::atomic<bool>& FXChain::filterGlideDisabledForAudit()
 }
 #endif
 
-// SPAStripAdded: FILTER. Port of SPASynth's per-voice filter section
-// (SPASynthVoice.cpp) to an insert effect: filter 1 blends with the dry by its
-// MIX; Series feeds that into filter 2 (blended by its own MIX), Parallel runs
-// both on the raw input and averages them (0.5 x sum), exactly as the synth does.
-// filterEnable is filter 1's switch, filter2Enable filter 2's; a disabled filter
-// is a plain wire (in Parallel it still takes its half of the average, as in the
-// synth). No latency, no tail.
-//
-// Coefficient glide. MultiModeFilter::setParams is a whole-block setting: the
-// synth calls it per voice per block with a slow envelope behind it. Here the
-// cutoff arrives from the modulation matrix in steps (a new value every 8 host
-// samples, slewed over 4 ms) or from automation in steps of a whole host block,
-// and a step of the SVF's coefficients is audible as zipper noise. So the
-// filter is run in short sub-blocks, and between the cutoff / resonance / drive
-// of the previous call and this call's targets the sub-block values move on a
-// straight line (cutoff in LOG frequency, i.e. a constant number of octaves per
-// sample). MultiModeFilter itself is untouched. A filter that was just switched
-// on, or the first call after prepare / reset, snaps to its target.
+// SPAStripAdded: FILTER. The module (two SVF filters, Series / Parallel, sub-block
+// coefficient glide, enable-edge reset) lives in spa-fx (Filter.h), moved unchanged.
+// Always invoked: it tracks each filter's own enable edge.
 void FXChain::processFilter (juce::AudioBuffer<float>& buffer, const Params& p)
 {
-    const bool on[2] { p.filterEnable, p.filter2Enable };
-
-    for (int i = 0; i < 2; ++i)
-    {
-        auto& slot = filterSlots[(size_t) i];
-        if (on[i] && ! slot.wasOn)
-        {
-            slot.filter.reset();
-            slot.haveApplied = false;
-        }
-        slot.wasOn = on[i];
-    }
-
-    if (! on[0] && ! on[1])
-        return;
-
-    const int numSamples = buffer.getNumSamples();
-    const int numCh = juce::jmin (2, buffer.getNumChannels());
-    if (numSamples <= 0 || numCh <= 0)
-        return;
-
-    struct Target { params::FilterType type; float cutoff, resonance, drive, mix; };
-    const auto toType = [] (int t) { return (params::FilterType) juce::jlimit (0, 7, t); };
-    const Target targets[2] {
-        { toType (p.filter1Type), juce::jmax (1.0f, p.filter1Cutoff), juce::jlimit (0.0f, 1.0f, p.filter1Resonance),
-          juce::jlimit (0.0f, 1.0f, p.filter1Drive), juce::jlimit (0.0f, 1.0f, p.filter1Mix) },
-        { toType (p.filter2Type), juce::jmax (1.0f, p.filter2Cutoff), juce::jlimit (0.0f, 1.0f, p.filter2Resonance),
-          juce::jlimit (0.0f, 1.0f, p.filter2Drive), juce::jlimit (0.0f, 1.0f, p.filter2Mix) } };
-    const bool parallel = p.filterRouting == 1;
-
+    spa::fx::Filter::Params fp;
+    fp.filterEnable = p.filterEnable;      fp.filterRouting = p.filterRouting;
+    fp.filter1Type = p.filter1Type;        fp.filter1Cutoff = p.filter1Cutoff;
+    fp.filter1Resonance = p.filter1Resonance; fp.filter1Drive = p.filter1Drive; fp.filter1Mix = p.filter1Mix;
+    fp.filter2Enable = p.filter2Enable;    fp.filter2Type = p.filter2Type;
+    fp.filter2Cutoff = p.filter2Cutoff;    fp.filter2Resonance = p.filter2Resonance;
+    fp.filter2Drive = p.filter2Drive;      fp.filter2Mix = p.filter2Mix;
    #ifdef SPASTRIP_MOD_AUDIT
-    const bool glide = ! filterGlideDisabledForAudit().load (std::memory_order_relaxed);
-   #else
-    constexpr bool glide = true;
+    filterModule.glideEnabled = ! filterGlideDisabledForAudit().load (std::memory_order_relaxed);
    #endif
-    // One setParams per call (the plain port) when the glide is switched off for the audit.
-    const int subBlock = glide ? 16 : numSamples;
-    const int numSub = (numSamples + subBlock - 1) / subBlock;
-
-    float logFrom[2], logTo[2];
-    for (int i = 0; i < 2; ++i)
-    {
-        auto& slot = filterSlots[(size_t) i];
-        if (! slot.haveApplied || ! glide)
-        {
-            slot.appliedCutoff = targets[i].cutoff;
-            slot.appliedResonance = targets[i].resonance;
-            slot.appliedDrive = targets[i].drive;
-        }
-        logFrom[i] = std::log (slot.appliedCutoff);
-        logTo[i] = std::log (targets[i].cutoff);
-    }
-
-    for (int sb = 0; sb < numSub; ++sb)
-    {
-        const int start = sb * subBlock;
-        const int len = juce::jmin (subBlock, numSamples - start);
-        const float t = (float) (sb + 1) / (float) numSub;   // the last sub-block lands on the target
-
-        for (int i = 0; i < 2; ++i)
-        {
-            if (! on[i])
-                continue;
-            auto& slot = filterSlots[(size_t) i];
-            const auto& tg = targets[i];
-            const float cutoff = juce::exactlyEqual (slot.appliedCutoff, tg.cutoff)
-                               ? tg.cutoff
-                               : std::exp (logFrom[i] + (logTo[i] - logFrom[i]) * t);
-            slot.filter.setParams (tg.type, cutoff,
-                                   slot.appliedResonance + (tg.resonance - slot.appliedResonance) * t,
-                                   slot.appliedDrive + (tg.drive - slot.appliedDrive) * t);
-        }
-
-        for (int ch = 0; ch < numCh; ++ch)
-        {
-            float* data = buffer.getWritePointer (ch) + start;
-            auto& f1 = filterSlots[0].filter;
-            auto& f2 = filterSlots[1].filter;
-            const float m1 = targets[0].mix, m2 = targets[1].mix;
-
-            for (int i = 0; i < len; ++i)
-            {
-                const float x = data[i];
-
-                // The filter always runs (its state must keep tracking the input);
-                // MIX 0 then returns the input itself, so a fully dry filter is a
-                // bit-exact wire rather than x + (y - x) * 0.
-                float out1 = x;
-                if (on[0])
-                {
-                    const float y = f1.processSample (ch, x);
-                    out1 = m1 > 0.0f ? x + (y - x) * m1 : x;
-                }
-
-                float out = out1;
-                if (on[1])
-                {
-                    if (parallel)
-                    {
-                        const float y = f2.processSample (ch, x);
-                        const float pb = m2 > 0.0f ? x + (y - x) * m2 : x;
-                        out = 0.5f * (out1 + pb);
-                    }
-                    else
-                    {
-                        const float y = f2.processSample (ch, out1);
-                        out = m2 > 0.0f ? out1 + (y - out1) * m2 : out1;
-                    }
-                }
-                data[i] = out;
-            }
-        }
-    }
-
-    for (int i = 0; i < 2; ++i)
-    {
-        auto& slot = filterSlots[(size_t) i];
-        slot.appliedCutoff = targets[i].cutoff;
-        slot.appliedResonance = targets[i].resonance;
-        slot.appliedDrive = targets[i].drive;
-        slot.haveApplied = true;
-    }
+    filterModule.process (buffer, fp);
 }
 
 void FXChain::processConvolve (juce::AudioBuffer<float>& buffer, const Params& p)
@@ -737,65 +498,48 @@ void FXChain::reshapeConvolutionIR()
         return;
     }
 
-    const int rawN = rawIR.getNumSamples();
-    const int ch = rawIR.getNumChannels();
-    const double sr = rawIRSampleRate > 0.0 ? rawIRSampleRate : sampleRate;
+    // IR shaping (start trim, decay, damping, display envelope) is the shared
+    // spa-fx code; the engine, its partitioning and queue stay SPAStrip's own.
+    spa::fx::ConvolveShape shape;
+    shape.decay = convDecayApplied; shape.damping = convDampingApplied; shape.start = convStartApplied;
+    auto shapedIR = spa::fx::shapeImpulseResponse (rawIR, rawIRSampleRate, sampleRate, shape);
 
-    // Start position trims from the FRONT of the raw impulse -- removing the
-    // direct hit and early reflections to leave only the diffuse tail -- and
-    // runs before decay/damping, which then reshape whatever remains. This is
-    // independent of pre-delay (which inserts silence before the wet signal
-    // rather than removing anything from the impulse itself).
-    //
-    // Never let the effect go silent: however far start is dragged, at least
-    // kConvStartMinTailSeconds of the raw IR survives the trim. A start of 0
-    // always trims nothing, matching pre-start-position behaviour exactly.
-    const int minTailSamples = juce::jmax (1, (int) (kConvStartMinTailSeconds * sr));
-    const int maxTrim = juce::jmax (0, rawN - minTailSamples);
-    const int trimSamples = juce::jlimit (0, maxTrim,
-                                          (int) (juce::jlimit (0.0f, 1.0f, convStartApplied) * (float) rawN));
-    convStartTrimApplied = rawN > 0 ? (float) trimSamples / (float) rawN : 0.0f;
-
-    const int n = juce::jmax (1, rawN - trimSamples);
-    irLengthSeconds.store ((double) n / sr, std::memory_order_relaxed);
-
-    const float decay = juce::jlimit (0.05f, 1.0f, convDecayApplied);
-    const float damp  = juce::jlimit (0.0f, 1.0f, convDampingApplied);
-    const float kDecay = 6.9f / (decay * (float) juce::jmax (1, n));   // -60 dB at decay*len
-    const float cutoff = juce::jmap (damp, 0.0f, 1.0f, 20000.0f, 800.0f);
-    const float lpCoef = damp > 0.001f
-        ? 1.0f - std::exp (-juce::MathConstants<float>::twoPi * cutoff / (float) sr)
-        : 1.0f;
-
-    juce::AudioBuffer<float> shaped (ch, n);
-    for (auto& e : irEnvelope) e = 0.0f;
-
-    for (int c = 0; c < ch; ++c)
-    {
-        const float* src = rawIR.getReadPointer (c) + trimSamples;
-        float* dst = shaped.getWritePointer (c);
-        float lp = 0.0f;
-        for (int i = 0; i < n; ++i)
-        {
-            float v = src[i];
-            if (damp > 0.001f) { lp += lpCoef * (v - lp); v = lp; }
-            dst[i] = v * std::exp (-kDecay * (float) i);
-        }
-    }
-
-    for (int i = 0; i < n; ++i)
-    {
-        const int b = juce::jlimit (0, convEnvPoints - 1, i * convEnvPoints / juce::jmax (1, n));
-        float a = std::abs (shaped.getSample (0, i));
-        if (ch > 1) a = juce::jmax (a, std::abs (shaped.getSample (1, i)));
-        irEnvelope[(size_t) b] = juce::jmax (irEnvelope[(size_t) b], a);
-    }
+    convStartTrimApplied = shapedIR.startTrim;
+    irLengthSeconds.store (shapedIR.lengthSeconds, std::memory_order_relaxed);
+    irEnvelope = shapedIR.envelope;
+    const double sr = shapedIR.sampleRate;
+    auto shaped = std::move (shapedIR.ir);
 
     convolution->loadImpulseResponse (std::move (shaped), sr,
                                      juce::dsp::Convolution::Stereo::yes,
                                      juce::dsp::Convolution::Trim::no,
                                      juce::dsp::Convolution::Normalise::yes);
     convIrLoaded.store (true, std::memory_order_relaxed);
+}
+
+void FXChain::tapEq (const juce::AudioBuffer<float>& buffer, bool pre)
+{
+    if (eqTap == nullptr) return;
+    tapInto (buffer, pre ? eqTap->preScope : eqTap->scope, pre ? eqTap->preScopeWrite : eqTap->scopeWrite);
+}
+
+void FXChain::tapInto (const juce::AudioBuffer<float>& buffer,
+                       std::array<std::atomic<float>, Telemetry::scopeSize>& ring, std::atomic<int>& writeIdx)
+{
+    const int n = buffer.getNumSamples();
+    const auto* l = buffer.getReadPointer (0);
+    const auto* r = buffer.getNumChannels() > 1 ? buffer.getReadPointer (1) : l;
+    const int d = eqTapDecim;
+    int w = writeIdx.load (std::memory_order_relaxed);
+    for (int i = 0; i + d <= n; i += d)
+    {
+        float acc = 0.0f;
+        for (int k = 0; k < d; ++k)
+            acc += l[i + k] + r[i + k];
+        ring[(size_t) w].store (0.5f * acc / (float) d, std::memory_order_relaxed);
+        w = (w + 1) & (Telemetry::scopeSize - 1);
+    }
+    writeIdx.store (w, std::memory_order_release);
 }
 
 void FXChain::processEQ (juce::AudioBuffer<float>& buffer, const Params& p)

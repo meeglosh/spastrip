@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <spa_fx/GrainFX.h>
 #include <array>
 #include <atomic>
 
@@ -41,8 +42,8 @@ struct Telemetry
     std::array<std::atomic<float>, scopeSize> scope {};
     std::atomic<int> scopeWrite { 0 };
 
-    // PRE-FX tap for the EQ analyzer's PRE/POST overlay: the signal entering
-    // the chain, same mono-sum shape as `scope`.
+    // PRE tap for the EQ analyzer's PRE/POST overlay: the signal entering the EQ
+    // module (written by FXChain at the EQ's chain position), mono sum like `scope`.
     std::array<std::atomic<float>, scopeSize> preScope {};
     std::atomic<int> preScopeWrite { 0 };
 
@@ -52,6 +53,10 @@ struct Telemetry
     std::array<std::atomic<float>, limiterHistory> limOut {};
     std::array<std::atomic<float>, limiterHistory> limGrDb {};
     std::atomic<int> limWrite { 0 };
+    // LIMIT panel meters: the limiter's own input peak (before DRIVE) and output
+    // peak, linear max of L/R over the host block; 0 while it is off.
+    std::atomic<float> limInPeak { 0.0f };
+    std::atomic<float> limOutPeak { 0.0f };
 
     // SPAStripAdded (phase 2): sidechain / modulation matrix, published once per
     // chunk. scEnvelope: the detector output, 0..1. scPresent: a signal source
@@ -81,16 +86,8 @@ struct Telemetry
     // (seconds), dir = +1 forward / -1 reversed, pan -1..1. fill = how much of
     // the ring has ever been written (0..1); frozen = FREEZE is holding it.
     // Cosmetic only, so relaxed atomics with count published last.
-    static constexpr int maxGrainFxViz = 64;
-    struct GrainFxViz
-    {
-        std::atomic<int> count { 0 };
-        std::array<std::atomic<float>, maxGrainFxViz> back {}, age {}, span {}, dir {}, pan {};
-        std::atomic<float> fill { 0.0f };
-        std::atomic<bool> frozen { false };
-        std::atomic<bool> capturing { false };   // FREEZE on, still filling the ring
-        std::atomic<bool> active { false };
-    };
+    static constexpr int maxGrainFxViz = spa::fx::GrainFX::maxViz;
+    using GrainFxViz = spa::fx::GrainFX::Viz;   // defined with the shared GLITTER DSP
     GrainFxViz grainFx;
 };
 

@@ -1,5 +1,8 @@
 # SPAStrip handoff
 
+**2026-10-08: SPAStrip adopts the shared spa-fx module (uncommitted working tree, next build is 1.0.4).** Pin `libs/spa-fx.pin` (fetch: `scripts/fetch_spa_fx.sh`, CMake `libs/spa-fx` or `SPA_FX_DIR`/`-DSPASTRIP_SPA_FX_DIR`; CI reuses `SPA_LICENSING_TOKEN`, which must also be granted Contents: Read on meeglosh/spa-fx). Reverb, delay, dist, chorus, mod, trem/vib, EQ, COMP, GLITTER, limiter, FILTER and the CONV IR shaping now come from spa-fx; the frozen 1.0.3 code is in `tests/legacy/` (`FXChain_103.h` = the whole old chain) with bit-identity tests in `tests/SpaFxTests.inc`. Intended changes: reverb level normalisation, GLITTER RELEASE tail fix, FREEZE removed (loads as RELEASE max), EQ analyzer PRE/POST tap at the EQ's chain position, Ozone-style LIMIT panel. SPAStrip's `source/dsp/*.h` are now thin shims over spa-fx.
+
+
 **2026-10-06: 1.0.3 SENT to Paul and Phil** (main 6759378 = the build commit; dist/shopify/SPAStrip-1.0.3/ staged mac+win). **Bump to 1.0.4 for anything after this.** 1.0.2 (10e122a) and 1.0.1 (333e4f9) also went out. Licensing pinned in libs/spa-licensing.pin; CI needs secret SPA_LICENSING_TOKEN. Cross-product state: ~/spasynth/handoff.md top section. The latest dated sections at the bottom of this file supersede older "Current state" text above them.
 
 State as of 2026-10-02. Read this before starting work in a new session.

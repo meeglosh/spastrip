@@ -216,7 +216,7 @@ namespace fxModuleTests
             FX fx; fx.prepare (sr, 256);
             auto p = grainParams();
             runChain (fx, p, 48000, [&] (int i) { return 0.5f * (float) std::sin (6.2831853 * 440.0 * i / sr); });
-            p.grainFreeze = true;
+            p.grainReleaseSec = spa::params::grainReleaseInfinite;   // RELEASE at its top is the hold
             const auto before = fx.grain().ringPeak();
             const auto out = runChain (fx, p, 48000, [&] (int i) { return 0.5f * (float) std::sin (6.2831853 * 3000.0 * i / sr); }, 4096);
             double e = 0; for (float v : out) e += v * v;
@@ -296,7 +296,7 @@ namespace fxModuleTests
         // FREEZE already on, ring empty, audio arrives: captures, then sounds, then holds.
         {
             FX fx; fx.prepare (sr, 256);
-            auto p = grainParams(); p.grainFreeze = true;
+            auto p = grainParams(); p.grainReleaseSec = spa::params::grainReleaseInfinite;
             const auto out = runChain (fx, p, 48000 * 3, sine (440.0));
             expect (fx.grain().isCapturing() == false && fx.grain().isFrozen(), "freeze holds once enough audio is captured");
             expect (energy (out, 48000, 48000 * 3) > 1.0e-4, "FREEZE on from the start becomes audible within the capture window");
@@ -308,7 +308,7 @@ namespace fxModuleTests
         // Silent input while capturing keeps capturing; audio arriving later still works.
         {
             FX fx; fx.prepare (sr, 256);
-            auto p = grainParams(); p.grainFreeze = true;
+            auto p = grainParams(); p.grainReleaseSec = spa::params::grainReleaseInfinite;
             runChain (fx, p, 48000 * 2, [] (int) { return 0.0f; });
             expect (fx.grain().isCapturing() && ! fx.grain().isFrozen(), "silent input keeps capturing (no silent hold)");
             const auto out = runChain (fx, p, 48000 * 3, sine (440.0));
@@ -319,7 +319,7 @@ namespace fxModuleTests
             FX fx; fx.prepare (sr, 256);
             auto p = grainParams();
             runChain (fx, p, 48000, sine (440.0));
-            p.grainFreeze = true; p.grainEnable = false;
+            p.grainReleaseSec = spa::params::grainReleaseInfinite; p.grainEnable = false;
             runChain (fx, p, 512, [] (int) { return 0.0f; });
             p.grainEnable = true;
             const auto out = runChain (fx, p, 48000 * 3, sine (440.0));
@@ -775,7 +775,7 @@ namespace fxModuleTests
         std::vector<float> out;
         for (int part = 0; part < 2; ++part)
         {
-            p.grainFreeze = hiddenFreeze && part == 1;
+            p.grainReleaseSec = (hiddenFreeze && part == 1) ? spa::params::grainReleaseInfinite : releaseSec;
             const auto o = runChain (fx, p, 48000 * 2, [&] (int i)
             {
                 return part == 0 && i < 48000 ? 0.3f * nz.next() + 0.2f * (float) std::sin (6.2831853 * 330.0 * i / sr) : 0.0f;
@@ -804,7 +804,9 @@ namespace fxModuleTests
         juce::AudioBuffer<float> buf (2, 256);
         for (int block = 0; block < (int) (sr * 4.0) / 256; ++block)
         {
-            p.freeze = freezeSecondHalf && block * 256 >= (int) (sr * 2.0);
+            const bool hold = freezeSecondHalf && block * 256 >= (int) (sr * 2.0);
+            if constexpr (requires { p.freeze; }) p.freeze = hold;
+            else p.releaseSec = hold ? spa::params::grainReleaseInfinite : releaseSec;
             for (int i = 0; i < 256; ++i)
             {
                 const int n = block * 256 + i;
@@ -897,6 +899,94 @@ namespace fxModuleTests
         gSpread = 0.0f;
     }
 
+    // Seconds after the input ends until the cloud's level (0.25 s windows) is last within 60 dB
+    // of its own peak -- the RT60 reading of RELEASE. A 0.1 s white-noise burst, MIX 100%.
+    double grainTailSecondsTo60 (float releaseSec, float posMs, float sizeMs, float densityHz, float spread, float spreadPitch)
+    {
+        constexpr double sr = 48000.0;
+        FX fx; fx.prepare (sr, 256);
+        auto p = grainParams();
+        p.grainPositionMs = posMs; p.grainSizeMs = sizeMs; p.grainDensityHz = densityHz;
+        p.grainSpread = spread; p.grainSpreadPitch = spreadPitch; p.grainReleaseSec = releaseSec;
+        Noise nz (77);
+        const int burst = (int) (sr * 0.1);
+        const auto out = runChain (fx, p, (int) (sr * (releaseSec * 1.7 + 4.0)), [&] (int i) { return i < burst ? 0.5f * nz.next() : 0.0f; });
+        const int win = (int) (sr * 0.25);
+        std::vector<double> db;
+        for (size_t a = (size_t) burst; a + (size_t) win <= out.size(); a += (size_t) win)
+        {
+            double e = 0; for (int i = 0; i < win; ++i) e += (double) out[a + (size_t) i] * out[a + (size_t) i];
+            db.push_back (10.0 * std::log10 (e / win + 1.0e-20));
+        }
+        double peak = -200.0; for (double d : db) peak = std::max (peak, d);
+        int last = 0; for (size_t k = 0; k < db.size(); ++k) if (db[k] > peak - 60.0) last = (int) k;
+        return (double) (last + 1) * 0.25;
+    }
+
+    // The tester's report: "a RELEASE of 30 s lasts at the very best 5 s". The feedback filter's
+    // power loss compounds per pass, and a dense cloud averages its grains down; each lost
+    // 20-90 % of the tail depending on POSITION / SIZE / DENSITY.
+    void grainReleaseTailMatchesKnobTest()
+    {
+        std::cout << "grainReleaseTailMatchesKnobTest\n";
+        struct Cfg { const char* name; float pos, size, dens, spread, spPitch; };
+        const Cfg cfgs[] = { { "defaults", 300.0f, 120.0f, 14.0f, 0.25f, 3.0f },
+                             { "POSITION 10 ms, no spread", 10.0f, 120.0f, 14.0f, 0.0f, 0.0f },
+                             { "POSITION 50 ms", 50.0f, 120.0f, 14.0f, 0.25f, 3.0f },
+                             { "dense (SIZE 500, DENSITY 400)", 300.0f, 500.0f, 400.0f, 0.25f, 3.0f } };
+        for (const auto& c : cfgs)
+            for (float rel : { 3.0f, 10.0f, 30.0f })
+            {
+                const double t = grainTailSecondsTo60 (rel, c.pos, c.size, c.dens, c.spread, c.spPitch);
+                std::cout << "  " << c.name << ", RELEASE " << rel << " s: -60 dB after " << t << " s (" << t / rel << "x)\n";
+                expect (t > 0.75 * rel && t < 1.3 * rel,
+                        juce::String (c.name) + ", RELEASE " + juce::String (rel, 0) + " s: tail " + juce::String (t, 1) + " s is within -25/+30% of the knob");
+            }
+        // Longer RELEASE is longer, monotonically, at the default settings.
+        double prev = 0.0; bool mono = true;
+        for (float rel : { 2.0f, 5.0f, 10.0f, 20.0f, 30.0f })
+        {
+            const double t = grainTailSecondsTo60 (rel, 300.0f, 120.0f, 14.0f, 0.25f, 3.0f);
+            mono = mono && t > prev; prev = t;
+        }
+        expect (mono, "tail length grows with RELEASE (2, 5, 10, 20, 30 s)");
+    }
+
+    // RELEASE at 100% is the freeze: still audible after a minute of silent input, and the host is
+    // told the 300 s ceiling.
+    void grainReleaseMaxHoldsIndefinitelyTest()
+    {
+        std::cout << "grainReleaseMaxHoldsIndefinitelyTest\n";
+        constexpr double sr = 48000.0;
+        for (float pos : { 300.0f, 20.0f })
+        {
+            FX fx; fx.prepare (sr, 256);
+            auto p = grainParams();
+            p.grainPositionMs = pos; p.grainSpread = 0.25f; p.grainSpreadPitch = 3.0f;
+            p.grainReleaseSec = spa::params::grainReleaseInfinite;
+            Noise nz (5);
+            const int burst = (int) (sr * 1.0), total = (int) (sr * 62.0);
+            const auto out = runChain (fx, p, total, [&] (int i) { return i < burst ? 0.4f * nz.next() : 0.0f; });
+            const auto rmsDb = [&] (size_t a, size_t b)
+            {
+                double e = 0; for (size_t i = a; i < b; ++i) e += (double) out[i] * out[i];
+                return 10.0 * std::log10 (e / (double) (b - a) + 1.0e-20);
+            };
+            const double early = rmsDb ((size_t) (sr * 3.0), (size_t) (sr * 5.0));
+            const double late = rmsDb ((size_t) (sr * 58.0), (size_t) (sr * 60.0));
+            std::cout << "  POSITION " << pos << " ms: 3-5 s " << early << " dBFS, 58-60 s " << late << " dBFS\n";
+            expect (late > -45.0 && std::abs (late - early) < 6.0,
+                    "RELEASE 100%: still audible after 60 s of silent input (POSITION " + juce::String (pos, 0) + " ms)");
+            expect (fx.grain().isFrozen(), "RELEASE 100% reports the hold");
+        }
+        FX tailFx; tailFx.prepare (sr, 256);
+        auto p = grainParams();
+        p.grainReleaseSec = spa::params::grainReleaseInfinite;
+        expect (tailFx.tailSeconds (p) >= 299.9, "RELEASE 100% reports the 300 s tail ceiling to the host");
+        p.grainReleaseSec = 10.0f;
+        expect (tailFx.tailSeconds (p) < 20.0, "a 10 s RELEASE reports about 10 s, not the ceiling");
+    }
+
     void grainReleaseInfiniteTest()
     {
         std::cout << "grainReleaseInfiniteTest\n";
@@ -908,14 +998,11 @@ namespace fxModuleTests
             double e = 0; for (size_t i = a; i < b && i < v.size(); ++i) e += (double) v[i] * v[i];
             return e / (double) std::max<size_t> (1, b - a);
         };
-        // Identical to the old FREEZE, sample for sample, from an empty ring.
+        // Captures, then holds, from an empty ring.
         {
-            FX a, b; a.prepare (sr, 256); b.prepare (sr, 256);
+            FX a; a.prepare (sr, 256);
             auto pa = grainParams(); pa.grainReleaseSec = inf;
-            auto pb = grainParams(); pb.grainFreeze = true;
             const auto oa = runChain (a, pa, 48000 * 3, sine (440.0));
-            const auto ob = runChain (b, pb, 48000 * 3, sine (440.0));
-            expect (fnvOf (oa) == fnvOf (ob), "RELEASE infinite renders exactly like the old FREEZE");
             expect (a.grain().isFrozen() && ! a.grain().isCapturing(), "infinite RELEASE holds once enough is captured");
             expect (energy (oa, 48000, 48000 * 3) > 1.0e-4, "infinite RELEASE from the start becomes audible (captures before holding)");
             const auto held = a.grain().ringPeak();
@@ -978,8 +1065,22 @@ namespace fxModuleTests
         };
         expect (load (true, false, 0.0) == (double) spa::params::grainReleaseInfinite, "a pre-RELEASE state with FREEZE on loads as RELEASE infinite");
         expect (load (false, false, 0.0) == 0.0, "a pre-RELEASE state with FREEZE off loads as RELEASE off");
-        expect (std::abs (load (true, true, 4.0) - 4.0) < 1.0e-3, "a state that carries RELEASE keeps it");
-        // A hidden FREEZE switched on by host automation holds too (processor path).
+        expect (std::abs (load (false, true, 4.0) - 4.0) < 1.0e-3, "a state that carries RELEASE and FREEZE off keeps its RELEASE");
+        // Decision 2026-10-08: FREEZE is gone, RELEASE at 100% is the hold. A state with
+        // FREEZE on loads as RELEASE 100% even when it also carries a shorter RELEASE.
+        expect (load (true, true, 4.0) == (double) spa::params::grainReleaseInfinite, "FREEZE on + RELEASE 4 s loads as RELEASE 100%");
+        {
+            auto procPtr = makeProc (48000.0, 512); auto& proc = *procPtr;
+            auto state = proc.getAPVTS().copyState();
+            for (int i = 0; i < state.getNumChildren(); ++i)
+                if (state.getChild (i).getProperty ("id").toString() == id::fx::grainFreeze)
+                    state.getChild (i).setProperty ("value", 1.0, nullptr);
+            juce::MemoryBlock mb;
+            if (auto xml = state.createXml()) juce::AudioProcessor::copyXmlToBinary (*xml, mb);
+            proc.setStateInformation (mb.getData(), (int) mb.getSize());
+            expect (proc.getAPVTS().getRawParameterValue (id::fx::grainFreeze)->load() < 0.5f, "the hidden FREEZE reads off after the migration");
+        }
+        // The hidden parameter is inert: host automation of it does not hold the cloud.
         {
             auto proc = makeProc (48000.0, 512);
             for (const char* pid : { id::fx::grainEnable, id::fx::grainFreeze })
@@ -995,7 +1096,7 @@ namespace fxModuleTests
                 }
                 proc->processBlock (buf, midi);
             }
-            expect (proc->getTelemetry().grainFx.frozen.load(), "FREEZE set by automation still holds");
+            expect (! proc->getTelemetry().grainFx.frozen.load(), "automating the hidden FREEZE does nothing");
         }
     }
 

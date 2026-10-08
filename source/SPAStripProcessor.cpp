@@ -41,27 +41,33 @@ namespace
         }
     }
 
-    // GLITTER's FREEZE button became RELEASE (infinite = hold), as in SPASynth
-    // 1.0.31. A state that carries fxGrain.freeze = on but no fxGrain.release
-    // comes from an older build: it loads as RELEASE infinite, so the knob
-    // shows what holds. Runs before fillMissingParamsWithDefaults.
+    // GLITTER's FREEZE is gone: RELEASE at its top (infinite) is the hold. The
+    // fxGrain.freeze parameter stays registered (hidden, never shown, never
+    // randomized) so old sessions and automation still load, but a state that
+    // carries it ON loads with RELEASE = infinite (set or overwritten) and
+    // FREEZE written back to off, so the knob shows what holds. Runs before
+    // fillMissingParamsWithDefaults.
     void migrateGrainFreeze (juce::ValueTree& state)
     {
         const juce::String freezeId = params::id::fx::grainFreeze, releaseId = params::id::fx::grainRelease;
-        bool freezeOn = false;
+        juce::ValueTree freezeChild, releaseChild;
         for (int i = 0; i < state.getNumChildren(); ++i)
         {
-            const auto child = state.getChild (i);
+            auto child = state.getChild (i);
             if (! child.hasType ("PARAM"))
                 continue;
             const auto cid = child.getProperty ("id").toString();
-            if (cid == releaseId)
-                return;
-            if (cid == freezeId)
-                freezeOn = (double) child.getProperty ("value") >= 0.5;
+            if (cid == releaseId) releaseChild = child;
+            if (cid == freezeId)  freezeChild = child;
         }
-        if (! freezeOn)
+        if (! freezeChild.isValid() || (double) freezeChild.getProperty ("value") < 0.5)
             return;
+        freezeChild.setProperty ("value", 0.0, nullptr);
+        if (releaseChild.isValid())
+        {
+            releaseChild.setProperty ("value", (double) params::grainReleaseInfinite, nullptr);
+            return;
+        }
         juce::ValueTree migrated ("PARAM");
         migrated.setProperty ("id", releaseId, nullptr);
         migrated.setProperty ("value", (double) params::grainReleaseInfinite, nullptr);
@@ -256,7 +262,6 @@ SPAStripProcessor::SPAStripProcessor()
     bind (r.grainReverse, fx::grainReverse);
     bind (r.grainFeedback, fx::grainFeedback);
     bind (r.grainMix, fx::grainMix);
-    r.grainFreeze = rp (fx::grainFreeze);
     r.grainRelease = rp (fx::grainRelease);
 
     // SPAStripAdded: FILTER.
@@ -823,17 +828,6 @@ void SPAStripProcessor::processChunk (juce::AudioBuffer<float>& hostBuffer, int 
             }
         }
 
-        // EQ analyzer PRE tap: the signal entering the chain.
-        {
-            int w = telemetry.preScopeWrite.load (std::memory_order_relaxed);
-            for (int i = 0; i < n; ++i)
-            {
-                telemetry.preScope[(size_t) w].store (0.5f * (wL[i] + wR[i]), std::memory_order_relaxed);
-                w = (w + 1) & (dsp::Telemetry::scopeSize - 1);
-            }
-            telemetry.preScopeWrite.store (w, std::memory_order_release);
-        }
-
         // --- 4b. Sidechain detector. Source "Input" is the main input AFTER the
         // input gain (and before the chain); "External" is the sidechain bus,
         // which is simply absent (envelope 0) when the host has it disabled.
@@ -915,6 +909,9 @@ void SPAStripProcessor::processChunk (juce::AudioBuffer<float>& hostBuffer, int 
         // The chain runs at the (possibly oversampled) engine rate, so its
         // CPU cost scales with the factor, as in SPASynth. While a modulation
         // slot is active it runs in pieces of <= modUpdateInterval host samples.
+        // EQ analyzer PRE/POST taps live inside FXChain::process, at the EQ
+        // module's current position in the user-ordered chain.
+        fxChain.setEqTap (&telemetry, useOs ? factor : 1);
         if (useOs)
         {
             auto& os = *oversamplers[(size_t) (factor == 2 ? 0 : 1)];
@@ -995,15 +992,27 @@ void SPAStripProcessor::processChunk (juce::AudioBuffer<float>& hostBuffer, int 
     // --- 9. Telemetry (post everything): peaks, analyzer scope, limiter history.
     {
         float pkL = 0.0f, pkR = 0.0f;
-        int w = telemetry.scopeWrite.load (std::memory_order_relaxed);
         for (int i = 0; i < n; ++i)
         {
             pkL = juce::jmax (pkL, std::abs (wL[i]));
             pkR = juce::jmax (pkR, std::abs (wR[i]));
-            telemetry.scope[(size_t) w].store (0.5f * (wL[i] + wR[i]), std::memory_order_relaxed);
-            w = (w + 1) & (dsp::Telemetry::scopeSize - 1);
         }
-        telemetry.scopeWrite.store (w, std::memory_order_release);
+        // The analyzer PRE/POST rings are written by the chain around the EQ; in
+        // bypass the chain does not run, so both show the dry signal.
+        if (bypassed)
+        {
+            int w = telemetry.scopeWrite.load (std::memory_order_relaxed);
+            int pw = telemetry.preScopeWrite.load (std::memory_order_relaxed);
+            for (int i = 0; i < n; ++i)
+            {
+                telemetry.scope[(size_t) w].store (0.5f * (wL[i] + wR[i]), std::memory_order_relaxed);
+                telemetry.preScope[(size_t) pw].store (0.5f * (wL[i] + wR[i]), std::memory_order_relaxed);
+                w = (w + 1) & (dsp::Telemetry::scopeSize - 1);
+                pw = (pw + 1) & (dsp::Telemetry::scopeSize - 1);
+            }
+            telemetry.scopeWrite.store (w, std::memory_order_release);
+            telemetry.preScopeWrite.store (pw, std::memory_order_release);
+        }
         telemetry.peakL.store (pkL, std::memory_order_relaxed);
         telemetry.peakR.store (pkR, std::memory_order_relaxed);
 
@@ -1189,7 +1198,6 @@ void SPAStripProcessor::updateFXParams()
     p.grainReverse     = rf.grainReverse.get();
     p.grainFeedback    = rf.grainFeedback.get();
     p.grainMix         = rf.grainMix.get();
-    p.grainFreeze      = rf.grainFreeze->load() >= 0.5f;
     p.grainReleaseSec  = rf.grainRelease->load();
 
     // SPAStripAdded: FILTER.

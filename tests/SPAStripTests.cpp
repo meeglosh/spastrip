@@ -29,6 +29,7 @@
 #include "presets/PresetManager.h"
 #include "ui/SPAStripEditor.h"
 #include "ui/FilterPanel.h"
+#include "ui/LimiterDisplay.h"
 #include "dsp/FilterResponse.h"
 #include "params/Randomizer.h"
 #include "ui/UiSettings.h"
@@ -41,6 +42,17 @@
 #include "reference/GlitchMultiband.h"
 #include "reference/GrainFX_1_0_2.h"
 #include "reference/StereoChorus_1_0_2.h"
+
+// SPAStrip 1.0.3's own FX code, frozen for the spa-fx adoption bit-identity tests.
+#include "legacy/FXChain_103.h"
+#include "legacy/GrainFX_103.h"
+#include "legacy/Limiter_103.h"
+#include "legacy/ModEffect_103.h"
+#include "legacy/Multiband_103.h"
+#include "legacy/ParametricEQ_103.h"
+#include "legacy/PlateReverb_103.h"
+#include "legacy/StereoChorus_103.h"
+#include "legacy/TremVib_103.h"
 
 #if JUCE_MAC
 // libmalloc's (private but long-stable) allocation hook, used by noAllocationTest.
@@ -582,7 +594,7 @@ namespace
         setParam (*a, pid::fx::convDamping, 0.4f);
         setParam (*a, pid::fx::convStart, 0.1f);
         setParam (*a, pid::fx::convMix, 0.77f);
-        setParam (*a, pid::fx::grainFreeze, 1.0f);
+        setParam (*a, pid::fx::grainRelease, 5.0f);   // (FREEZE is gone: a state with it on loads as RELEASE 100%)
         juce::Array<int> custom { 10, 9, 8, 7, 6, 11, 5, 4, 3, 2, 1, 0 };
         a->setFxOrder (custom);
 
@@ -1312,6 +1324,8 @@ namespace
 #include "LicensingTests.inc"
 #include "ChorusVhsTests.inc"
 #include "MidiLearnTests.inc"
+#include "SpaFxTests.inc"
+#include "LimiterPanelTests.inc"
 }
 
 int main (int argc, char** argv)
@@ -1389,6 +1403,8 @@ int main (int argc, char** argv)
     RUN (fxModuleTests::grainReleaseOffIdenticalTest);
     RUN (fxModuleTests::grainReleaseDecayTest);
     RUN (fxModuleTests::grainReleaseInfiniteTest);
+    RUN (fxModuleTests::grainReleaseTailMatchesKnobTest);
+    RUN (fxModuleTests::grainReleaseMaxHoldsIndefinitelyTest);
     RUN (fxModuleTests::grainReleaseLegacyFreezeLoadTest);
     RUN (fxModuleTests::grainReleaseSafetyTest);
     RUN (fxModuleTests::grainReleaseInjectionTest);
@@ -1424,6 +1440,28 @@ int main (int argc, char** argv)
     RUN (fxEngineTests::reverbArrivalFollowsPreDelayTest);
     RUN (fxEngineTests::plateReverbIndexStressTest);
     RUN (fxEngineTests::delayTailLengthTest);
+    RUN (spaFxTests::chorusBitIdenticalTest);
+    RUN (spaFxTests::modEffectBitIdenticalTest);
+    RUN (spaFxTests::tremVibBitIdenticalTest);
+    RUN (spaFxTests::eqBitIdenticalTest);
+    RUN (spaFxTests::limiterBitIdenticalTest);
+    RUN (spaFxTests::compBitIdenticalTest);
+    RUN (spaFxTests::grainBitIdenticalTest);
+    RUN (spaFxTests::plateReverbReferenceCellTest);
+    RUN (spaFxTests::chainDistortionTest);
+    RUN (spaFxTests::chainDelayTest);
+    RUN (spaFxTests::chainModulationFxTest);
+    RUN (spaFxTests::chainFilterTest);
+    RUN (spaFxTests::chainDynamicsAndEqTest);
+    RUN (spaFxTests::chainGrainTest);
+    RUN (spaFxTests::chainEverythingTest);
+    RUN (spaFxTests::chainConvolveTest);
+    RUN (spaFxTests::chainReverbReferenceCellTest);
+    RUN (spaFxTests::reverbLevelConstantAcrossSizeDecayTest);
+    RUN (spaFxTests::eqAnalyzerTapFollowsChainPositionTest);
+    RUN (limiterPanelTests::limiterPanelControlsTest);
+    RUN (limiterPanelTests::limiterMetersTest);
+    RUN (limiterPanelTests::limiterLanesCarryParamIdsTest);
 
     // --- SPAStrip processor ------------------------------------------------
     RUN (passthroughTest);

@@ -98,7 +98,7 @@ juce::StringArray FXDisplay::watchedFor (Kind kind)
         case Kind::grain:      return { fx::grainEnable, fx::grainSize, fx::grainDensity,
                                         fx::grainSync, fx::grainDivision, fx::grainPitch,
                                         fx::grainSpread, fx::grainSpreadPitch, fx::grainPosition, fx::grainReverse,
-                                        fx::grainFeedback, fx::grainMix, fx::grainFreeze, fx::grainRelease };
+                                        fx::grainFeedback, fx::grainMix, fx::grainRelease };
         case Kind::eq:
         {
             juce::StringArray ids { fx::eqEnable, fx::eqCharacter };
@@ -902,8 +902,7 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             // The base strip is how much of the ring has been written. FREEZE
             // holds that strip and says so.
             const auto on = value (fx::grainEnable) >= 0.5f;
-            const auto frozen = value (fx::grainFreeze) >= 0.5f
-                              || value (fx::grainRelease) >= dsp::GrainFX::infiniteRelease;
+            const auto frozen = value (fx::grainRelease) >= dsp::GrainFX::infiniteRelease;
             const auto posSec = value (fx::grainPosition) * 0.001f;
             const auto sizeSec = value (fx::grainSize) * 0.001f;
             const auto spread = value (fx::grainSpread);

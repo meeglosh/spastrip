@@ -7,12 +7,16 @@
 #include "ModEffect.h"
 #include "TremVib.h"
 #include "Limiter.h"
-#include "PlateReverb.h"
+#include "PlateReverb.h"   // thin shim over the shared spa-fx module
+#include <spa_fx/Delay.h>
+#include <spa_fx/Tail.h>
+#include <spa_fx/Convolve.h>
+#include <spa_fx/Distortion.h>
+#include <spa_fx/Filter.h>
 #include "StereoChorus.h"
 #include "ParametricEQ.h"
 #include "Multiband.h"
 #include "GrainFX.h"
-#include "MultiModeFilter.h"   // SPAStripAdded
 #include "Telemetry.h"
 #include "../params/LfoDivisions.h"
 
@@ -229,8 +233,7 @@ public:
         float grainReverse = 0.0f;
         float grainFeedback = 0.0f;
         float grainMix = 0.35f;
-        bool grainFreeze = false;
-        float grainReleaseSec = 0.0f;     // GLITTER RELEASE: 0 off, >= GrainFX::infiniteRelease holds
+        float grainReleaseSec = 0.0f;     // GLITTER RELEASE: 0 off, >= GrainFX::infiniteRelease holds (the only freeze)
 
         // SPAStripAdded: FILTER, two SVF filters (Series / Parallel). filterEnable
         // is FILTER 1's switch (the module's own enable); filter 2 has its own.
@@ -267,13 +270,10 @@ public:
     //   drive 0.5  -> ~6.9 bits / ~6.3-sample hold
     //   drive 0.8  -> ~4.2 bits / ~19-sample hold
     //   drive 1    -> 3 bits / a ~40-sample hold at 48 kHz
-    static float crushBitsForDrive (float drive)
-    {
-        return 16.0f * std::pow (3.0f / 16.0f, drive);
-    }
+    static float crushBitsForDrive (float drive) { return spa::fx::Distortion::crushBitsForDrive (drive); }
     static float crushHoldForDrive (float drive, double sampleRate)
     {
-        return (float) (std::pow (40.0, (double) drive) * (sampleRate / 48000.0));
+        return spa::fx::Distortion::crushHoldForDrive (drive, sampleRate);
     }
 
     void prepare (double sampleRate, int maxBlockSize);
@@ -299,9 +299,20 @@ public:
         t.compInPeak.store (compInPeak, std::memory_order_relaxed);
         t.compOutPeak.store (compOutPeak, std::memory_order_relaxed);
         compInPeak = compOutPeak = 0.0f;
+        t.limInPeak.store (limInPeak, std::memory_order_relaxed);
+        t.limOutPeak.store (limOutPeak, std::memory_order_relaxed);
+        limInPeak = limOutPeak = 0.0f;
         grainEffect.publish (t.grainFx);
     }
     const GrainFX& grain() const { return grainEffect; }
+
+    // EQ analyzer taps. When set, process() writes the mono sum of the signal
+    // entering the EQ module (PRE) and leaving it (POST) into
+    // Telemetry::preScope / scope, at the EQ's CURRENT position in the user
+    // order (also when the EQ is off, where PRE == POST). `decimation` is the
+    // engine/host rate ratio (oversampling factor): groups of that many samples
+    // are averaged so the rings stay at the host rate the analyzer assumes.
+    void setEqTap (Telemetry* t, int decimation) { eqTap = t; eqTapDecim = decimation < 1 ? 1 : decimation; }
 
     // Lookahead-limiter latency (reported to the host) + gain reduction meter.
     int limiterLatencySamples (const Params& p) const;
@@ -414,7 +425,8 @@ private:
     // silent -- which reads as a bug, not a creative extreme -- so the reshape
     // always keeps at least this much of the tail, however early the start
     // position is set.
-    static constexpr float kConvStartMinTailSeconds = 0.15f;
+    static constexpr float kConvStartMinTailSeconds = spa::fx::convolveMinTailSeconds;
+    static_assert (convEnvPoints == spa::fx::convolveEnvPoints);
     // Written on the message thread (reshapeConvolutionIR), read from
     // tailSeconds() on the audio thread (getTailLengthSeconds).
     std::atomic<double> irLengthSeconds { 0.0 };
@@ -424,49 +436,35 @@ private:
     std::array<juce::AudioBuffer<float>, 2> convPreBuf;
     int convPreWrite = 0;
 
-    // Distortion tone filter (post-shaper lowpass), one per channel.
-    std::array<juce::dsp::FirstOrderTPTFilter<float>, 2> toneFilters;
-
-    // Crush distortion (sample-and-hold decimation) state, one per channel:
-    // the currently-held output sample and a fractional phase accumulator
-    // counting down the hold length. Fixed-size, no allocation.
-    std::array<float, 2> crushHold {};
-    std::array<float, 2> crushPhase {};
+    // Distortion: shared spa-fx module (tone filter + crush state live there).
+    spa::fx::Distortion distortion;
 
     // Own engine rather than juce::dsp::Chorus: JUCE drives both channels
     // from one LFO, so it images mono and there is no way to bolt a width
     // control onto it from the outside. See StereoChorus.h.
     StereoChorus chorusEffect;
 
-    // Delay: fixed max 4 s ring buffer per channel.
-    juce::AudioBuffer<float> delayBuffer;
-    int delayWritePos = 0;
-    juce::SmoothedValue<float> delaySamplesSmoothed;
-    juce::SmoothedValue<float> delayWidthSmoothed;
+    // Delay: shared spa-fx module (fixed max 4 s ring buffer per channel).
+    spa::fx::Delay delay;
 
     PlateReverb reverb;
 
     // 8-band parametric EQ (hand-rolled biquads, character saturation).
     ParametricEQ eq;
+    Telemetry* eqTap = nullptr;
+    int eqTapDecim = 1;
+    void tapEq (const juce::AudioBuffer<float>& buffer, bool pre);
+    void tapInto (const juce::AudioBuffer<float>& buffer,
+                  std::array<std::atomic<float>, Telemetry::scopeSize>& ring, std::atomic<int>& writeIdx);
 
     Multiband compEffect;
     mutable float compInPeak = 0.0f, compOutPeak = 0.0f;   // see publishTelemetry
+    mutable float limInPeak = 0.0f, limOutPeak = 0.0f;     // LIMIT panel meters, same scheme
     GrainFX grainEffect;
 
-    // SPAStripAdded: FILTER module. Two TPT state-variable filters (the synth's
-    // MultiModeFilter, ported verbatim) plus the glue state that lives here
-    // rather than in the filter: the enable edges (state is cleared when a
-    // filter is switched on) and the cutoff / resonance / drive the filter was
-    // last run with, so the next call can glide to its new target instead of
-    // stepping coefficients (see processFilter).
-    struct FilterSlot
-    {
-        MultiModeFilter filter;
-        bool wasOn = false;
-        bool haveApplied = false;       // false: next call snaps instead of gliding
-        float appliedCutoff = 20000.0f, appliedResonance = 0.0f, appliedDrive = 0.0f;
-    };
-    std::array<FilterSlot, 2> filterSlots;
+    // FILTER module (SPAStripAdded): shared spa-fx Filter (two TPT state-variable
+    // filters, Series / Parallel, sub-block coefficient glide, enable-edge reset).
+    spa::fx::Filter filterModule;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FXChain)
 };

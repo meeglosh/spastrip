@@ -41,7 +41,7 @@ jobs:
           HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
         run: |
           if [ "$HAS_TOKEN" != "true" ]; then
-            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT for meeglosh/spa-licensing (Contents: Read). Release builds refuse to build without the licensing module."
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx. Release builds refuse to build without the licensing module."
             exit 1
           fi
 
@@ -57,6 +57,23 @@ jobs:
           ref: ${{ steps.licpin.outputs.sha }}
           token: ${{ secrets.SPA_LICENSING_TOKEN }}
           path: libs/spa-licensing
+          persist-credentials: false
+
+      # The shared FX module lives in the PRIVATE repo meeglosh/spa-fx. The same
+      # read-only PAT (SPA_LICENSING_TOKEN) must also be granted Contents: Read
+      # on meeglosh/spa-fx. Pinned by libs/spa-fx.pin.
+      - name: Read spa-fx pin
+        id: fxpin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-fx.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-fx (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-fx
+          ref: ${{ steps.fxpin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-fx
           persist-credentials: false
 
       - name: Configure
@@ -235,7 +252,7 @@ jobs:
           HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
         run: |
           if [ "$HAS_TOKEN" != "true" ]; then
-            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT for meeglosh/spa-licensing (Contents: Read). Release builds refuse to build without the licensing module."
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx. Release builds refuse to build without the licensing module."
             exit 1
           fi
 
@@ -251,6 +268,23 @@ jobs:
           ref: ${{ steps.licpin.outputs.sha }}
           token: ${{ secrets.SPA_LICENSING_TOKEN }}
           path: libs/spa-licensing
+          persist-credentials: false
+
+      # The shared FX module lives in the PRIVATE repo meeglosh/spa-fx. The same
+      # read-only PAT (SPA_LICENSING_TOKEN) must also be granted Contents: Read
+      # on meeglosh/spa-fx. Pinned by libs/spa-fx.pin.
+      - name: Read spa-fx pin
+        id: fxpin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-fx.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-fx (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-fx
+          ref: ${{ steps.fxpin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-fx
           persist-credentials: false
 
       - name: Configure

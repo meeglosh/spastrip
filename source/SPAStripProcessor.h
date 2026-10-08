@@ -471,7 +471,6 @@ private:
         std::atomic<float>* grainDivision = nullptr;
         FxFloat grainPitch, grainSpread, grainSpreadPitch, grainPosition, grainReverse,
                 grainFeedback, grainMix;
-        std::atomic<float>* grainFreeze = nullptr;
         std::atomic<float>* grainRelease = nullptr;
 
         // SPAStripAdded: FILTER.

@@ -28,3 +28,6 @@ ui-snapshots/
 
 # Private licensing module checkout (pinned by libs/spa-licensing.pin)
 libs/spa-licensing/
+
+# Shared FX module checkout (pinned by libs/spa-fx.pin)
+libs/spa-fx/
