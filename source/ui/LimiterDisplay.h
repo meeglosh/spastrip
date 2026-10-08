@@ -563,7 +563,7 @@ public:
 
         for (auto* k : { &release, &link })
         {
-            k->setBounds (strip.removeFromLeft (68));   // "STEREO LINK" needs ~55 px of caption + the Label's 10 px border
+            k->setBounds (strip.removeFromLeft (80));   // "STEREO LINK" needs ~55 px (mac) / ~58.5 px (Windows) + the Label's 10 px border; 70 px available = 11+ px headroom
             strip.removeFromLeft (2);
         }
         strip.removeFromLeft (14);
