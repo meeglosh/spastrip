@@ -501,7 +501,7 @@ private:
         }
         void mouseUp (const juce::MouseEvent& e) override
         {
-            if (contains (e.getPosition()) && ! e.mods.isPopupMenu())
+            if (getLocalBounds().contains (e.getPosition()) && ! e.mods.isPopupMenu()) // contains() asks the OS peer; an overlapping window made test clicks miss
             {
                 on = ! on;
                 repaint();
