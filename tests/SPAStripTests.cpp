@@ -1319,6 +1319,8 @@ namespace
 #include "Phase2bTests.inc"
 #include "Phase3Tests.inc"
 #include "PresetTests.inc"
+#include "PresetFormatFixtureTests.inc"
+#include "PresetBrowserFeatureTests.inc"
 #include "FilterTests.inc"
 #include "BenchCpu.inc"
 #include "LicensingTests.inc"
@@ -1394,9 +1396,24 @@ int main (int argc, char** argv)
     const bool licensingOnly = false;
 #endif
 
+    // `SPAStripTests --only name[,name...]` runs just the tests whose registered name contains
+    // one of the (case-insensitive) patterns -- for iterating on one change; the full suite stays the gate.
+    juce::StringArray onlyPatterns;
+    if (argc >= 3 && juce::String (argv[1]) == "--only")
+        onlyPatterns = juce::StringArray::fromTokens (juce::String (argv[2]), ",", "");
+    const auto selectedByOnly = [&onlyPatterns] (const juce::String& name)
+    {
+        if (onlyPatterns.isEmpty())
+            return true;
+        for (const auto& pattern : onlyPatterns)
+            if (pattern.isNotEmpty() && name.containsIgnoreCase (pattern))
+                return true;
+        return false;
+    };
+
     int run = 0;
     const auto start = juce::Time::getMillisecondCounterHiRes();
-#define RUN(fn) do { if ((! licensingOnly || juce::String (#fn).startsWith ("licTests::")) && (! uiOnly || juce::String (#fn).startsWith ("phase3Tests::") || juce::String (#fn).startsWith ("presetTests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
+#define RUN(fn) do { if (selectedByOnly (#fn) && (! licensingOnly || juce::String (#fn).startsWith ("licTests::")) && (! uiOnly || juce::String (#fn).startsWith ("phase3Tests::") || juce::String (#fn).startsWith ("presetTests::")) && (! filterOnly || juce::String (#fn).startsWith ("filterTests::"))) { ++run; fn(); } } while (false)
 
     // --- Ported from SPASynth ---------------------------------------------
     RUN (fxModuleTests::compMatchesSPAGlitchTest);
@@ -1554,6 +1571,9 @@ int main (int argc, char** argv)
     RUN (presetTests::presetDialogFlowsTest);
     RUN (presetTests::presetLegacyOrderLoadTest);
     RUN (presetTests::synthImportRemovedTest);
+    RUN (presetFixtureTests::presetFormatFixtureTest);
+    RUN (presetTests::presetSearchClearTest);
+    RUN (presetTests::presetBatchExportTest);
     // --- FILTER module ------------------------------------------------------------
     RUN (filterTests::filterResponseTest);
     RUN (filterTests::filterRoutingTest);

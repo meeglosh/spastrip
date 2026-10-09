@@ -288,6 +288,9 @@ done
 # Shared FX module (spa-fx) at its pinned commit; CMake uses libs/spa-fx unless
 # SPA_FX_DIR is set in the environment.
 "$REPO_ROOT/scripts/fetch_spa_fx.sh"
+# Shared preset browser/manager (spa-presets) at its pinned commit; CMake uses
+# libs/spa-presets unless SPA_PRESETS_DIR is set in the environment.
+"$REPO_ROOT/scripts/fetch_spa_presets.sh"
 cmake -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DSPASTRIP_UNIVERSAL_BINARY=ON -DSPASTRIP_COPY_PLUGIN=OFF -DSPASTRIP_BUILD_SNAPSHOTS=OFF \
       -DSPASTRIP_REQUIRE_LICENSING=ON \

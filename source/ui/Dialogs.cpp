@@ -347,6 +347,46 @@ void ClashDialog::layoutCard (juce::Rectangle<int> card)
 }
 
 //==============================================================================
+BatchExportClashDialog::BatchExportClashDialog (int clashing, int total, Decide d)
+    : DialogOverlay ({ 420, 130 }), decide (std::move (d))
+{
+    message.setText (juce::String (clashing) + " of the " + juce::String (total)
+                         + (clashing == 1 ? " presets already exists" : " presets already exist") + " in that folder.",
+                     juce::dontSendNotification);
+    message.setFont (metrics::labelFont());
+    message.setMinimumHorizontalScale (1.0f);
+    addAndMakeVisible (message);
+    replaceButton.onClick = [this] { choose (Choice::replaceAll); };
+    skipButton.onClick = [this] { choose (Choice::skipExisting); };
+    cancelButton.onClick = [this] { choose (Choice::cancel); };
+    for (auto* b : { &replaceButton, &skipButton, &cancelButton })
+        addAndMakeVisible (*b);
+}
+
+void BatchExportClashDialog::choose (Choice how)
+{
+    // The owner defers the dialog's destruction; the decision is delivered first.
+    auto cb = std::move (decide);
+    decide = nullptr;
+    dismiss();
+    if (cb)
+        juce::MessageManager::callAsync ([cb, how] { cb (how); });
+}
+
+void BatchExportClashDialog::layoutCard (juce::Rectangle<int> card)
+{
+    auto r = card.reduced (16, 12);
+    r.removeFromTop (28);
+    message.setBounds (r.removeFromTop (20));
+    auto buttons = r.removeFromBottom (28);
+    cancelButton.setBounds (buttons.removeFromRight (90));
+    buttons.removeFromRight (8);
+    skipButton.setBounds (buttons.removeFromRight (110));
+    buttons.removeFromRight (8);
+    replaceButton.setBounds (buttons.removeFromRight (100));
+}
+
+//==============================================================================
 SaveDialog::SaveDialog (const Init& init, SaveFn save, DefaultNameFn defaultName, NameTakenFn nameTaken,
                         std::function<void()> onSaved)
     : DialogOverlay ({ 400, 300 }), folders (init.userFolders), nameOwned (init.nameIsOwned),

@@ -69,6 +69,7 @@ public:
                       std::function<void()> onOk);
     void showClashDialog (const juce::String& presetName,
                           std::function<void (preset::PresetManager::ImportClash, bool)> decide);
+    void showBatchExportClashDialog (int clashing, int total, std::function<void (spa::presets::PresetBrowser::BatchExportClash)> decide);
     void dismissDialog();
     juce::Component* getDialogForTest() const { return dialog.get(); }
 

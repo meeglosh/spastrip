@@ -31,3 +31,6 @@ libs/spa-licensing/
 
 # Shared FX module checkout (pinned by libs/spa-fx.pin)
 libs/spa-fx/
+
+# Shared preset browser/manager checkout (pinned by libs/spa-presets.pin)
+libs/spa-presets/

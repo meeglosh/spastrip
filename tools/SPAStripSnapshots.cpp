@@ -415,6 +415,12 @@ int main (int argc, char** argv)
         pump (rig, 300);
         snap (*editor, outDir, "d6_preset_drawer_collapsed", false);
         browser.toggleGroupRow (browser.findGroupRow ("U:Studio"));
+
+        // The search box with text in it: the clear "x" is showing.
+        browser.setSearchText ("vocal");
+        pump (rig, 300);
+        snap (*editor, outDir, "d8_preset_drawer_search_clear");
+        browser.setSearchText ({});
     }
 
     // ---- (d7) an empty library --------------------------------------------------------

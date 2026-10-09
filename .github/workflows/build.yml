@@ -41,7 +41,7 @@ jobs:
           HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
         run: |
           if [ "$HAS_TOKEN" != "true" ]; then
-            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx. Release builds refuse to build without the licensing module."
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx AND meeglosh/spa-presets. Release builds refuse to build without the licensing module."
             exit 1
           fi
 
@@ -74,6 +74,23 @@ jobs:
           ref: ${{ steps.fxpin.outputs.sha }}
           token: ${{ secrets.SPA_LICENSING_TOKEN }}
           path: libs/spa-fx
+          persist-credentials: false
+
+      # The shared preset browser/manager lives in the PRIVATE repo meeglosh/spa-presets;
+      # the same read-only PAT must also be granted Contents: Read on it. Pinned by
+      # libs/spa-presets.pin.
+      - name: Read spa-presets pin
+        id: presetspin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-presets.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-presets (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-presets
+          ref: ${{ steps.presetspin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-presets
           persist-credentials: false
 
       - name: Configure
@@ -252,7 +269,7 @@ jobs:
           HAS_TOKEN: ${{ secrets.SPA_LICENSING_TOKEN != '' }}
         run: |
           if [ "$HAS_TOKEN" != "true" ]; then
-            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx. Release builds refuse to build without the licensing module."
+            echo "::error::Repository secret SPA_LICENSING_TOKEN is not set. It must be a fine-grained read-only PAT with Contents: Read on meeglosh/spa-licensing AND meeglosh/spa-fx AND meeglosh/spa-presets. Release builds refuse to build without the licensing module."
             exit 1
           fi
 
@@ -285,6 +302,23 @@ jobs:
           ref: ${{ steps.fxpin.outputs.sha }}
           token: ${{ secrets.SPA_LICENSING_TOKEN }}
           path: libs/spa-fx
+          persist-credentials: false
+
+      # The shared preset browser/manager lives in the PRIVATE repo meeglosh/spa-presets;
+      # the same read-only PAT must also be granted Contents: Read on it. Pinned by
+      # libs/spa-presets.pin.
+      - name: Read spa-presets pin
+        id: presetspin
+        shell: bash
+        run: echo "sha=$(tr -d '[:space:]' < libs/spa-presets.pin)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out spa-presets (private)
+        uses: actions/checkout@v4
+        with:
+          repository: meeglosh/spa-presets
+          ref: ${{ steps.presetspin.outputs.sha }}
+          token: ${{ secrets.SPA_LICENSING_TOKEN }}
+          path: libs/spa-presets
           persist-credentials: false
 
       - name: Configure

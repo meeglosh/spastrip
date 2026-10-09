@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <spa_presets/PresetBrowser.h>
+
 #include "../presets/PresetManager.h"
 #include "Controls.h"
 
@@ -141,6 +143,27 @@ private:
     juce::Label message;
     juce::ToggleButton applyToRest { "Do this for every clash in this import" };
     juce::TextButton replaceButton { "Replace" }, keepButton { "Keep both" }, skipButton { "Skip" };
+};
+
+//==============================================================================
+// A batch export found files that already exist in the chosen folder: ONE question for
+// the whole batch -- Replace all / Skip existing / Cancel. Esc or a click outside is Cancel.
+class BatchExportClashDialog : public DialogOverlay
+{
+public:
+    using Choice = spa::presets::PresetBrowser::BatchExportClash;
+    using Decide = std::function<void (Choice)>;
+    BatchExportClashDialog (int clashing, int total, Decide decide);
+
+    void choose (Choice);   // also the test entry point
+
+private:
+    void layoutCard (juce::Rectangle<int>) override;
+    juce::String getCardTitle() const override { return "Presets already exist"; }
+
+    Decide decide;
+    juce::Label message;
+    juce::TextButton replaceButton { "Replace all" }, skipButton { "Skip existing" }, cancelButton { "Cancel" };
 };
 
 //==============================================================================

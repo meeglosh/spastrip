@@ -242,7 +242,12 @@ ContentComponent::ContentComponent (SPAStripProcessor& p)
     { showConfirm (t, b, ok, std::move (cb)); };
     hooks.askClash = [this] (const juce::String& name, std::function<void (preset::PresetManager::ImportClash, bool)> cb)
     { showClashDialog (name, std::move (cb)); };
+    hooks.askBatchExportClash = [this] (int clashing, int total, std::function<void (spa::presets::PresetBrowser::BatchExportClash)> cb)
+    { showBatchExportClashDialog (clashing, total, std::move (cb)); };
     hooks.showMessage = [this] (const juce::String& t, const juce::String& m) { showMessage (t, m); };
+    // Every popup the drawer opens goes through the same anchoring helper as the rest of the editor.
+    hooks.showPopup = [this] (juce::PopupMenu& menu, const juce::PopupMenu::Options& options, std::function<void (int)> cb)
+    { showPopupAnchored (*presetBrowser, menu, options, std::move (cb)); };
     presetBrowser = std::make_unique<PresetBrowser> (processor, std::move (hooks));
     addChildComponent (*presetBrowser);
 
@@ -795,6 +800,12 @@ void ContentComponent::showClashDialog (const juce::String& presetName,
                                         std::function<void (preset::PresetManager::ImportClash, bool)> decide)
 {
     showDialog (std::make_unique<ClashDialog> (presetName, std::move (decide)));
+}
+
+void ContentComponent::showBatchExportClashDialog (int clashing, int total,
+                                                   std::function<void (spa::presets::PresetBrowser::BatchExportClash)> decide)
+{
+    showDialog (std::make_unique<BatchExportClashDialog> (clashing, total, std::move (decide)));
 }
 
 void ContentComponent::showRenameDialog (const juce::File& file)

@@ -339,6 +339,7 @@ SPAStripProcessor::SPAStripProcessor()
     // Demo mode blocks saving/exporting presets; loading presets and host
     // session save/restore are never affected.
     presetManager->isSaveBlocked = [this] { return isDemoActive(); };
+    presetManager->isExportBlocked = [this] { return isDemoActive(); };   // export writes presets out too
 #endif
 
     // Message-thread housekeeping (oversampling rebuild, latency publish,
