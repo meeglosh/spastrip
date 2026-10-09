@@ -1421,6 +1421,7 @@ int main (int argc, char** argv)
     RUN (fxModuleTests::grainReleaseDecayTest);
     RUN (fxModuleTests::grainReleaseInfiniteTest);
     RUN (fxModuleTests::grainReleaseTailMatchesKnobTest);
+    RUN (fxModuleTests::grainReleaseNoRunawayTest);
     RUN (fxModuleTests::grainReleaseMaxHoldsIndefinitelyTest);
     RUN (fxModuleTests::grainReleaseLegacyFreezeLoadTest);
     RUN (fxModuleTests::grainReleaseSafetyTest);

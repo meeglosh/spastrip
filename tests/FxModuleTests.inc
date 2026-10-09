@@ -933,7 +933,13 @@ namespace fxModuleTests
         const Cfg cfgs[] = { { "defaults", 300.0f, 120.0f, 14.0f, 0.25f, 3.0f },
                              { "POSITION 10 ms, no spread", 10.0f, 120.0f, 14.0f, 0.0f, 0.0f },
                              { "POSITION 50 ms", 50.0f, 120.0f, 14.0f, 0.25f, 3.0f },
-                             { "dense (SIZE 500, DENSITY 400)", 300.0f, 500.0f, 400.0f, 0.25f, 3.0f } };
+                             { "dense (SIZE 500, DENSITY 400)", 300.0f, 500.0f, 400.0f, 0.25f, 3.0f },
+                             // The tester's runaway: POSITION 0, SPR TIME 0 (grains read the same audio, a pass of
+                             // 6 samples), and the small SPR TIMEs next to it, where the loop is partly coherent.
+                             { "tester: SIZE 200, DENSITY 400, POSITION 0, SPR TIME 0", 0.0f, 200.0f, 400.0f, 0.0f, 0.0f },
+                             { "POSITION 0, SPR TIME 0.05", 0.0f, 200.0f, 400.0f, 0.05f, 0.0f },
+                             { "POSITION 0, SPR TIME 0.15", 0.0f, 200.0f, 400.0f, 0.15f, 0.0f },
+                             { "POSITION 0, SPR TIME 0 (sparse DENSITY 14)", 0.0f, 120.0f, 14.0f, 0.0f, 0.0f } };
         for (const auto& c : cfgs)
             for (float rel : { 3.0f, 10.0f, 30.0f })
             {
@@ -950,6 +956,73 @@ namespace fxModuleTests
             mono = mono && t > prev; prev = t;
         }
         expect (mono, "tail length grows with RELEASE (2, 5, 10, 20, 30 s)");
+    }
+
+    // The tester's report: GLITTER SIZE 200 ms, DENSITY 400/s, SYNC off, PITCH 0, SPR TIME 0, SPR PITCH 0, POSITION 0,
+    // REVERSE 0, FDBK 0, RELEASE 10 s, MIX 50% "an infinite feedback loop". With every grain reading the same audio
+    // the loop is coherent and its pass is 6 samples, so a gain estimate that is 0.2 % high is a runaway that sat on
+    // the output ceiling. The loop level is now held to a reference that decays at the knob's rate. Sustained noise
+    // and a tone, then silence: the tail must fall (never rise), be 50 dB down by 1.5x RELEASE, and match the knob.
+    void grainReleaseNoRunawayTest()
+    {
+        std::cout << "grainReleaseNoRunawayTest\n";
+        constexpr double sr = 48000.0;
+        struct Cfg { float spread, pos, size, dens, release; bool tone; };
+        const Cfg cfgs[] = { { 0.0f, 0.0f, 200.0f, 400.0f, 10.0f, false }, { 0.0f, 0.0f, 200.0f, 400.0f, 10.0f, true },
+                             { 0.0f, 0.0f, 200.0f, 400.0f, 3.0f, false },  { 0.05f, 0.0f, 200.0f, 400.0f, 10.0f, false },
+                             { 0.05f, 0.0f, 200.0f, 400.0f, 10.0f, true },  { 0.15f, 0.0f, 200.0f, 400.0f, 10.0f, false },
+                             { 0.0f, 10.0f, 120.0f, 100.0f, 10.0f, false }, { 0.0f, 0.0f, 500.0f, 400.0f, 30.0f, false } };
+        for (const auto& c : cfgs)
+        {
+            FX fx; fx.prepare (sr, 256);
+            auto p = grainParams();
+            p.grainMix = 0.5f; p.grainSizeMs = c.size; p.grainDensityHz = c.dens; p.grainPositionMs = c.pos;
+            p.grainSpread = c.spread; p.grainReleaseSec = c.release;
+            Noise nz (7);
+            const int inN = (int) (sr * 3.0), total = (int) (sr * (3.0 + c.release * 2.0 + 4.0));
+            const auto out = runChain (fx, p, total, [&] (int i)
+            {
+                if (i >= inN) return 0.0f;
+                return c.tone ? 0.5f * (float) std::sin (6.2831853 * 220.0 * i / sr) * (0.6f + 0.4f * nz.next()) : 0.5f * nz.next();
+            });
+            const int win = (int) (sr * 0.5);
+            std::vector<double> db;
+            for (size_t a = 0; a + (size_t) win <= out.size(); a += (size_t) win)
+            {
+                double e = 0; for (int i = 0; i < win; ++i) e += (double) out[a + (size_t) i] * out[a + (size_t) i];
+                db.push_back (10.0 * std::log10 (e / win + 1.0e-20));
+            }
+            double peak = -200.0; for (double d : db) peak = std::max (peak, d);
+            // After the input ends (+1 s for the cloud to settle) no window may rise above the loudest earlier one.
+            double riseMax = -1.0e9, runMax = -1.0e9;
+            for (size_t k = 8; k < db.size(); ++k) { if (runMax > -150.0) riseMax = std::max (riseMax, db[k] - runMax); runMax = std::max (runMax, db[k]); }
+            int last = 0; for (size_t k = 6; k < db.size(); ++k) if (db[k] > peak - 60.0) last = (int) k + 1;
+            const double t60 = (double) last * 0.5 - 3.0;
+            const juce::String what = "SPR TIME " + juce::String (c.spread, 2) + ", POSITION " + juce::String (c.pos, 0) + " ms, SIZE " + juce::String (c.size, 0)
+                                    + ", DENSITY " + juce::String (c.dens, 0) + ", RELEASE " + juce::String (c.release, 0) + " s" + (c.tone ? " (tone)" : " (noise)");
+            std::cout << "  " << what << ": -60 dB after " << t60 << " s, largest tail rise " << riseMax << " dB, end " << db.back() - peak << " dB\n";
+            expect (riseMax < 3.0, what + ": the tail never grows");
+            expect (db.back() < peak - 50.0, what + ": no runaway (50 dB down by the end)");
+            expect (t60 > 0.75 * c.release && t60 < 1.35 * c.release, what + ": tail " + juce::String (t60, 1) + " s matches RELEASE");
+        }
+        // The top of the knob is the hold and must HOLD, not grow, at POSITION 0 and SPR TIME 0 as well.
+        {
+            FX fx; fx.prepare (sr, 256);
+            auto p = grainParams();
+            p.grainMix = 1.0f; p.grainSizeMs = 200.0f; p.grainDensityHz = 400.0f; p.grainPositionMs = 0.0f; p.grainSpread = 0.0f;
+            p.grainReleaseSec = spa::params::grainReleaseInfinite;
+            Noise nz (3);
+            const auto out = runChain (fx, p, (int) (sr * 50.0), [&] (int i) { return i < (int) sr ? 0.4f * nz.next() : 0.0f; });
+            const auto rmsDb = [&] (size_t a, size_t b)
+            {
+                double e = 0; for (size_t i = a; i < b; ++i) e += (double) out[i] * out[i];
+                return 10.0 * std::log10 (e / (double) (b - a) + 1.0e-20);
+            };
+            const double early = rmsDb ((size_t) (sr * 4.0), (size_t) (sr * 6.0)), late = rmsDb ((size_t) (sr * 48.0), (size_t) (sr * 50.0));
+            std::cout << "  hold, POSITION 0, SPR TIME 0: 4-6 s " << early << " dBFS, 48-50 s " << late << " dBFS\n";
+            expect (late < early + 3.0, "RELEASE max at POSITION 0 / SPR TIME 0 does not grow");
+            expect (late > early - 6.0, "RELEASE max at POSITION 0 / SPR TIME 0 holds steady");
+        }
     }
 
     // RELEASE at 100% is the freeze: still audible after a minute of silent input, and the host is

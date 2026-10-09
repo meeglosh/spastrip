@@ -895,7 +895,7 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             // Live grain cloud. The horizontal axis is time behind the write
             // head (NOW at the right edge, older to the left, scaled to the
             // POSITION knob so the interesting region fills the display), the
-            // vertical axis is each grain's stereo pan. Every active grain is
+            // vertical axis is each grain's pitch (SPR PITCH scatters it, PITCH shifts it). Every active grain is
             // a pill centred on where it is reading right now, as wide as the
             // audio it covers, brightness following its window; a small
             // triangle on its leading edge shows the direction it plays in.
@@ -906,6 +906,10 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             const auto posSec = value (fx::grainPosition) * 0.001f;
             const auto sizeSec = value (fx::grainSize) * 0.001f;
             const auto spread = value (fx::grainSpread);
+            // Vertical axis: pitch in semitones (0 st on the centre line), wide enough for
+            // PITCH + SPR PITCH. The grain's rate is the audio it covers divided by SIZE.
+            const float pitchHalfRange = juce::jlimit (6.0f, 24.0f, std::abs (value (fx::grainPitch))
+                                                                      + value (fx::grainSpreadPitch) + 2.0f);
             const float windowSec = juce::jlimit (0.5f, 8.0f,
                                                   1.25f * (posSec + 0.25f * spread + 2.0f * sizeSec));
             const auto xForBack = [&] (float backSec)
@@ -917,7 +921,7 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
             const auto laneBottom = area.getBottom() - 10.0f;
             const auto laneH = juce::jmax (4.0f, laneBottom - laneTop);
 
-            // Centre (pan 0) line and a faint tick per half second, so the
+            // Centre (0 st) line and a faint tick per half second, so the
             // POSITION knob reads against something.
             g.setColour (t.outline.withAlpha (0.6f));
             g.drawHorizontalLine ((int) (laneTop + laneH * 0.5f), area.getX(), area.getRight());
@@ -964,12 +968,12 @@ void FXDisplay::paintDisplay (juce::Graphics& g, juce::Rectangle<float> area)
                 const auto age = juce::jlimit (0.0f, 1.0f, viz.age[(size_t) i].load (std::memory_order_relaxed));
                 const auto span = viz.span[(size_t) i].load (std::memory_order_relaxed);
                 const auto dir = viz.dir[(size_t) i].load (std::memory_order_relaxed);
-                const auto pan = juce::jlimit (-1.0f, 1.0f, viz.pan[(size_t) i].load (std::memory_order_relaxed));
-
+                
                 const auto win = 0.5f - 0.5f * std::cos (age * juce::MathConstants<float>::twoPi);
                 const auto cx = xForBack (back);
                 const auto w = juce::jmax (4.0f, area.getWidth() * span / windowSec);
-                const auto cy = laneTop + laneH * (0.5f + 0.5f * pan);
+                const auto semis = 12.0f * std::log2 (juce::jmax (0.05f, span / juce::jmax (0.002f, sizeSec)));
+        const auto cy = laneTop + laneH * (0.5f - 0.5f * juce::jlimit (-1.0f, 1.0f, semis / pitchHalfRange));
                 const auto h = juce::jmin (laneH * 0.3f, 2.0f + 5.0f * win);
 
                 const juce::Rectangle<float> pill (cx - w * 0.5f, cy - h * 0.5f, w, h);
