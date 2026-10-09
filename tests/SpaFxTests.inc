@@ -432,7 +432,7 @@ void plateReverbReferenceCellTest()
                 oldR.prepare (sr, n); newR.prepare (sr, n);
                 spa::dsp::legacy103::PlateReverb::Params po; spa::fx::PlateReverb::Params pn;
                 po.mode = pn.mode = mode; po.size = pn.size = 0.5f; po.decaySec = pn.decaySec = 2.0f;
-                po.preDelayMs = pn.preDelayMs = pre; po.mix = pn.mix = 0.6f;
+                po.preDelayMs = pn.preDelayMs = pre; po.mix = pn.mix = 1.0f;
                 po.hfDamp = pn.hfDamp = 0.37f; po.modDepth = pn.modDepth = 0.55f; po.width = pn.width = 0.8f;
                 uint32_t rng = 4242u + (uint32_t) (mode * 7 + ch);
                 bool same = true;
@@ -443,12 +443,16 @@ void plateReverbReferenceCellTest()
                         for (int i = 0; i < n; ++i) { const float v = b < 2 ? noiseOf (rng) * 0.5f : 0.0f; a.setSample (cc, i, v); c.setSample (cc, i, v); }
                     oldR.process (a, po);
                     newR.process (c.getWritePointer (0), ch > 1 ? c.getWritePointer (1) : nullptr, n, pn);
-                    same = std::memcmp (a.getReadPointer (0), c.getReadPointer (0), sizeof (float) * (size_t) n) == 0;
-                    if (ch > 1) same = same && std::memcmp (a.getReadPointer (1), c.getReadPointer (1), sizeof (float) * (size_t) n) == 0;
+                    for (int cc = 0; cc < ch; ++cc)   // pure wet == 1.0.3 x the spa-fx global -8 dB wet trim
+                        for (int i = 0; i < n; ++i)
+                        {
+                            const float e = a.getSample (cc, i) * 0.398107f;
+                            if (std::abs (e - c.getSample (cc, i)) > 1.0e-6f + 1.0e-5f * std::abs (e)) same = false;
+                        }
                 }
                 ++cells; if (! same) ++mismatches;
             }
-    expect (mismatches == 0, "spa-fx PlateReverb bit-identical to SPAStrip 1.0.3 at the reference cell over "
+    expect (mismatches == 0, "spa-fx PlateReverb equals SPAStrip 1.0.3 x the -8 dB wet trim at the reference cell over "
                                  + juce::String (cells) + " mode/PRE/channel cells (" + juce::String (mismatches) + " mismatches)");
 }
 
@@ -466,7 +470,7 @@ inline void both (OldChain::Params& o, NewChain::Params& n, F&& f) { f (o); f (n
 // Runs `blocks` blocks of noise (first 8 blocks, then silence) through both chains and
 // compares every sample. `perBlock(b, o, n)` may retarget the params. Block sizes vary.
 template <typename Setup>
-inline bool chainsMatch (double sr, int ch, int blocks, uint32_t seed, Setup&& setup, bool compareTail = true)
+inline bool chainsMatch (double sr, int ch, int blocks, uint32_t seed, Setup&& setup, bool compareTail = true, float wetScale = 1.0f)
 {
     OldChain oc; NewChain nc;
     oc.prepare (sr, 512); nc.prepare (sr, 512);
@@ -484,7 +488,14 @@ inline bool chainsMatch (double sr, int ch, int blocks, uint32_t seed, Setup&& s
         nc.process (y, pn);
         for (int cc = 0; cc < ch; ++cc)
         {
-            same = same && std::memcmp (x.getReadPointer (cc), y.getReadPointer (cc), sizeof (float) * (size_t) n) == 0;
+            if (wetScale == 1.0f)
+                same = same && std::memcmp (x.getReadPointer (cc), y.getReadPointer (cc), sizeof (float) * (size_t) n) == 0;
+            else   // pure-wet comparison against the frozen engine times a global wet trim
+                for (int i = 0; i < n; ++i)
+                {
+                    const float e = x.getSample (cc, i) * wetScale;
+                    if (std::abs (e - y.getSample (cc, i)) > 1.0e-6f + 1.0e-5f * std::abs (e)) same = false;
+                }
         }
     }
     return same && (! compareTail || juce::exactlyEqual (oc.tailSeconds (po), nc.tailSeconds (pn)));
@@ -776,9 +787,9 @@ void chainReverbReferenceCellTest()
                 both (po, pn, [&] (auto& p)
                 {
                     p.reverbEnable = true; p.reverbMode = mode; p.reverbSize = 0.5f; p.reverbDecay = 2.0f;
-                    p.reverbPreDelay = 20.0f; p.reverbMix = 0.5f;
+                    p.reverbPreDelay = 20.0f; p.reverbMix = 1.0f;
                 });
-            });
+            }, true, 0.398107f);   // spa-fx global -8 dB wet trim
             ++cells; if (! ok) ++bad;
         }
     expect (bad == 0, "REVERB through the chain bit-identical to SPAStrip 1.0.3 at the reference cell (" + juce::String (cells) + " cells, " + juce::String (bad) + " bad)");
