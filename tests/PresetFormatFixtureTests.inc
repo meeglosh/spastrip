@@ -79,48 +79,76 @@ namespace presetFixtureTests
         return out;
     }
 
-    // Byte-for-byte comparison; on a mismatch the message carries the first differing
-    // offset and ~60 characters of context from both sides.
     // Fixtures were written on macOS. Other platforms' float maths can round a parameter's
     // value differently in the last bits (e.g. a zero default saved as 3.576e-7 on macOS but
-    // 0.0 on Windows), so off macOS the two are also accepted when they differ ONLY in
-    // value="..." numbers that agree within 1e-6. macOS stays strictly byte-for-byte.
-    bool equalUpToFloatNoise (const juce::String& a, const juce::String& b)
+    // 0.0 on Windows), so off macOS the files are compared as parsed XML: same element tree,
+    // same attribute names in the same order, attribute values equal as strings OR as numbers
+    // within 1e-6 (scaled up for large magnitudes). macOS stays strictly byte-for-byte.
+    bool looksNumeric (const juce::String& s)
     {
-        int i = 0, j = 0;
-        const juce::String key ("value=\"");
-        while (i < a.length() && j < b.length())
-        {
-            if (a.substring (i).startsWith (key) && b.substring (j).startsWith (key))
-            {
-                i += key.length(); j += key.length();
-                const int ei = a.indexOfChar (i, '"'), ej = b.indexOfChar (j, '"');
-                if (ei < 0 || ej < 0) return false;
-                const auto va = a.substring (i, ei), vb = b.substring (j, ej);
-                if (va != vb)
-                {
-                    if (! va.containsOnly ("0123456789.-+eE") || ! vb.containsOnly ("0123456789.-+eE")) return false;
-                    if (std::abs (va.getDoubleValue() - vb.getDoubleValue()) > 1.0e-6) return false;
-                }
-                i = ei; j = ej;
-                continue;
-            }
-            if (a[i] != b[j]) return false;
-            ++i; ++j;
-        }
-        return i == a.length() && j == b.length();
+        return s.isNotEmpty() && s.containsOnly ("0123456789.-+eE") && s.containsAnyOf ("0123456789");
     }
 
+    // Returns {} when equal up to float noise, else a description of the first divergence.
+    juce::String xmlDivergence (const juce::XmlElement& a, const juce::XmlElement& b, const juce::String& path)
+    {
+        const auto here = path + "/" + a.getTagName();
+        if (a.getTagName() != b.getTagName()) return here + ": tag " + a.getTagName() + " vs " + b.getTagName();
+        if (a.getNumAttributes() != b.getNumAttributes())
+            return here + ": attribute count " + juce::String (a.getNumAttributes()) + " vs " + juce::String (b.getNumAttributes());
+        for (int i = 0; i < a.getNumAttributes(); ++i)
+        {
+            const auto n = a.getAttributeName (i);
+            if (n != b.getAttributeName (i)) return here + ": attribute #" + juce::String (i) + " name " + n + " vs " + b.getAttributeName (i);
+            const auto va = a.getAttributeValue (i), vb = b.getAttributeValue (i);
+            if (va == vb) continue;
+            if (looksNumeric (va) && looksNumeric (vb))
+            {
+                const double x = va.getDoubleValue(), y = vb.getDoubleValue();
+                if (std::abs (x - y) <= 1.0e-6 * juce::jmax (1.0, std::abs (x), std::abs (y))) continue;
+            }
+            return here + " [" + a.getStringAttribute ("id") + "]: " + n + "=\"" + va + "\" vs \"" + vb + "\"";
+        }
+        if (a.getNumChildElements() != b.getNumChildElements())
+            return here + ": child count " + juce::String (a.getNumChildElements()) + " vs " + juce::String (b.getNumChildElements());
+        auto* ca = a.getFirstChildElement();
+        auto* cb = b.getFirstChildElement();
+        while (ca != nullptr && cb != nullptr)
+        {
+            const auto d = xmlDivergence (*ca, *cb, here);
+            if (d.isNotEmpty()) return d;
+            ca = ca->getNextElement();
+            cb = cb->getNextElement();
+        }
+        if (a.getAllSubText().trim() != b.getAllSubText().trim()) return here + ": text differs";
+        return {};
+    }
+
+    // Empty when the texts match under the platform's rule; else a message with the first
+    // differing offset and ~60 characters of context from both sides (hex-escaped), plus, off
+    // macOS, where the tolerant XML comparison diverged.
     juce::String compareBytes (const juce::String& a, const juce::String& b)
     {
         if (a == b) return {};
+        juce::String extra;
        #if ! JUCE_MAC
-        if (equalUpToFloatNoise (a, b)) return {};
+        {
+            auto xa = juce::XmlDocument::parse (a);
+            auto xb = juce::XmlDocument::parse (b);
+            if (xa == nullptr || xb == nullptr)
+                extra = juce::String ("; tolerant compare: ") + (xa == nullptr ? "saved" : "fixture") + " does not parse as XML";
+            else
+            {
+                const auto d = xmlDivergence (*xa, *xb, {});
+                if (d.isEmpty()) return {};
+                extra = "; tolerant compare diverged at " + d;
+            }
+        }
        #endif
         int i = 0;
         while (i < a.length() && i < b.length() && a[i] == b[i]) ++i;
         return " [first difference at offset " + juce::String (i) + ", lengths " + juce::String (a.length()) + " vs " + juce::String (b.length())
-               + "; saved: ..." + escaped (a, i - 30, 60) + "... fixture: ..." + escaped (b, i - 30, 60) + "...]";
+               + "; saved: ..." + escaped (a, i - 30, 60) + "... fixture: ..." + escaped (b, i - 30, 60) + "..." + extra + "]";
     }
 
     juce::StringArray zipEntries (const juce::File& zip)
