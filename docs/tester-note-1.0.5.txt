@@ -20,7 +20,7 @@ WHAT'S NEW
 - Preset browser: an x in the search box clears it (Esc clears too).
   Select several presets, right-click Export, and they are saved as
   separate files with one replace/skip question and one summary.
-- The LIMIT panel's link icon responds to clicks reliably.
+- The LIMIT panel's link control is bigger, has a LINK label, and responds to clicks reliably.
 
 INSTALL
 1. Quit your DAW first (the Mac installer will ask you to if Logic,
@@ -40,6 +40,6 @@ PLEASE TEST (A/B against 1.0.4 where you can)
 6. Preset browser: clear the search with the x and with Esc. Select
    several presets, right-click Export, check the files and the summary.
    Your existing presets and favourites should all still be there.
-7. LIMIT panel: click the link icon repeatedly.
+7. LIMIT panel: is the LINK control easy to spot? Click it repeatedly.
 
 Anything odd, send me the preset and what you were doing.
