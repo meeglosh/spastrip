@@ -1,0 +1,45 @@
+SPAStrip 1.0.5
+
+My dudes,
+
+This one is about reverb level, a GLITTER fix and a shared preset browser update. SPASynth and SPAGlitch get the same effects.
+
+CHANGES THAT ARE ON PURPOSE (please don't report these as bugs)
+- Reverb is 8 dB quieter in every mode, so MIX has usable travel and
+  equal wet and dry now sits near the middle of the knob. Factory
+  presets were rebalanced to sound the same. Your own sessions with
+  reverb will sound drier at the same MIX.
+- With GLITTER RELEASE on, POSITION has a minimum of 8 ms.
+- Export is not available in demo mode.
+
+WHAT'S NEW
+- GLITTER RELEASE can no longer run away into endless feedback, and its
+  time matches the knob across SPR TIME and POSITION.
+- The GLITTER display shows pitch spread vertically and timing spread
+  horizontally.
+- Preset browser: an x in the search box clears it (Esc clears too).
+  Select several presets, right-click Export, and they are saved as
+  separate files with one replace/skip question and one summary.
+- The LIMIT panel's link icon responds to clicks reliably.
+
+INSTALL
+1. Quit your DAW first (the Mac installer will ask you to if Logic,
+   MainStage or GarageBand is open).
+2. Run the installer (Mac .pkg, Windows .exe). Windows is still unsigned:
+   click "More info" > "Run anyway".
+3. Logic: if SPAStrip doesn't show up, Plug-in Manager > Reset & Rescan
+   Selection, then restart Logic.
+
+PLEASE TEST (A/B against 1.0.4 where you can)
+4. Reverb: in every mode, sweep MIX. Is there useful travel, and does
+   equal wet/dry feel near the middle? Do factory presets still sound
+   like they did? Open an old session with reverb.
+5. GLITTER: turn RELEASE on and try long settings with SPR TIME and
+   POSITION moving. Does it ever run away or build up? Does the display
+   read pitch vertically and timing horizontally?
+6. Preset browser: clear the search with the x and with Esc. Select
+   several presets, right-click Export, check the files and the summary.
+   Your existing presets and favourites should all still be there.
+7. LIMIT panel: click the link icon repeatedly.
+
+Anything odd, send me the preset and what you were doing.
