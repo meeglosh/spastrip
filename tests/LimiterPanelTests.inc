@@ -113,6 +113,17 @@ namespace limiterPanelTests
             expect (hit != nullptr && (hit == &c || c.isParentOf (hit)), what + " is the hit target at its centre");
         };
         hitIs (thrLane, "THRESHOLD lane"); hitIs (ceilLane, "CEILING lane"); hitIs (mx.getLinkToggle(), "LINK icon");
+        {
+            // LINK caption sits above the icon inside the same click target; dividers are half the old run.
+            expect (mx.getLinkToggle().getHeight() >= 16 + mx.getLinkCaptionHeightForTest() && mx.getLinkCaptionHeightForTest() >= 8, "LINK caption band exists above the icon, inside its click target");
+            const auto seg = mx.getDividerLengthsForTest();
+            expect (seg[2] > 8 && seg[3] > 8 && seg[0] <= seg[2] / 2 + 1 && seg[1] <= seg[3] / 2 + 1 && seg[0] > 0 && seg[1] > 0,
+                    "divider lines are about half the old label-to-icon run (" + juce::String (seg[0]) + "/" + juce::String (seg[1]) + " vs " + juce::String (seg[2]) + "/" + juce::String (seg[3]) + ")");
+            const auto lb = editor->getLocalArea (&mx.getLinkToggle(), mx.getLinkToggle().getLocalBounds().withHeight (8)).getCentre().toFloat();
+            auto* capHit = editor->getComponentAt (lb.roundToInt());
+            expect (capHit == &mx.getLinkToggle(), "the LINK caption area hits the link control");
+        }
+
         hitIs (panel->getReleaseKnob(), "RELEASE knob"); hitIs (panel->getLinkKnob(), "STEREO LINK knob");
         hitIs (panel->getCharacter(), "character combo");
         hitIs (panel->getAutoRel(), "AUTO REL toggle"); hitIs (panel->getTruePeak(), "TRUE PK toggle");

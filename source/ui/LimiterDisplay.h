@@ -260,28 +260,17 @@ public:
 
         // Titles over each half; IN / OUT under the meters.
         g.setColour (t.textSecondary);
-        g.drawText ("THRESHOLD", getLocalBounds().removeFromTop (captionH).withWidth (getWidth() / 2 + 6),
+        g.drawText ("THRESHOLD", getLocalBounds().removeFromTop (captionH).removeFromBottom (labelRowH).withWidth (getWidth() / 2 + 6),
                     juce::Justification::centredLeft);
-        g.drawText ("CEILING", getLocalBounds().removeFromTop (captionH).withLeft (getWidth() / 2 - 6),
+        g.drawText ("CEILING", getLocalBounds().removeFromTop (captionH).removeFromBottom (labelRowH).withLeft (getWidth() / 2 - 6),
                     juce::Justification::centredRight);
 
-        // Divider lines run from each label to the link icon, tinted with its state.
+        // Divider lines flank the link icon, tinted with its state.
         {
-            const auto textW = [] (const juce::String& str)
-            {
-                juce::GlyphArrangement ga;
-                ga.addLineOfText (metrics::smallFont(), str, 0.0f, 0.0f);
-                return (int) std::ceil (ga.getBoundingBox (0, -1, true).getWidth());
-            };
-            const int y = captionH / 2;
-            const int gap = 5;
-            const auto ib = link.getBounds();
-            const int iconL = ib.getCentreX() - 7, iconR = ib.getCentreX() + 7;
-            const int thrEnd = textW ("THRESHOLD") + gap;
-            const int ceilStart = getWidth() - textW ("CEILING") - gap;
+            const auto d = dividers();
             g.setColour (link.isOn() ? t.accent : t.textSecondary.withAlpha (0.45f));
-            if (iconL - gap > thrEnd)    g.fillRect (thrEnd, y, iconL - gap - thrEnd, 1);
-            if (ceilStart > iconR + gap) g.fillRect (iconR + gap, y, ceilStart - iconR - gap, 1);
+            g.fillRect (d.left);
+            g.fillRect (d.right);
         }
 
         // Scale: faint rules across the track and labels in the centre gutter.
@@ -312,7 +301,7 @@ public:
     {
         auto r = getLocalBounds();
         r.removeFromTop (captionH);
-        link.setBounds (juce::Rectangle<int> (getWidth() / 2 - 15, 0, 30, captionH));
+        link.setBounds (juce::Rectangle<int> (getWidth() / 2 - 20, 0, 40, captionH));
         r.removeFromBottom (readoutH);
 
         const int meterW = 22, gutterW = 28;
@@ -332,12 +321,37 @@ public:
     bool isLinked() const { return linked; }
     float getThresholdDb() const { return threshold.getDb(); }
     float getCeilingDb() const { return ceiling.getDb(); }
+    // Test hooks for the divider lines: {left length, right length, old left length, old right length}.
+    std::array<int, 4> getDividerLengthsForTest() const { const auto d = dividers(); return { d.left.getWidth(), d.right.getWidth(), d.oldLeftLen, d.oldRightLen }; }
+    int getLinkCaptionHeightForTest() const { return captionH - labelRowH; }
     static float handleY (const juce::Component& lane, float db) { return limiter::dbToY (db, lane.getHeight()); }
     const LimiterLevelMeter& getInMeter() const { return inMeter; }
     const LimiterLevelMeter& getOutMeter() const { return outMeter; }
 
 private:
-    static constexpr int captionH = 16, readoutH = 16;
+    static constexpr int captionH = 26, labelRowH = 16, readoutH = 16;
+    // Divider segments: half of the old label-to-icon run, hugging the icon (old run kept for the test).
+    struct Dividers { juce::Rectangle<int> left, right; int oldLeftLen = 0, oldRightLen = 0; };
+    Dividers dividers() const
+    {
+        const auto textW = [] (const juce::String& str)
+        {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (metrics::smallFont(), str, 0.0f, 0.0f);
+            return (int) std::ceil (ga.getBoundingBox (0, -1, true).getWidth());
+        };
+        const int y = captionH - labelRowH / 2, gap = 5;
+        const auto ib = link.getBounds();
+        const int iconL = ib.getCentreX() - 9, iconR = ib.getCentreX() + 9;
+        const int thrEnd = textW ("THRESHOLD") + gap;
+        const int ceilStart = getWidth() - textW ("CEILING") - gap;
+        Dividers d;
+        d.oldLeftLen = juce::jmax (0, iconL - gap - thrEnd);
+        d.oldRightLen = juce::jmax (0, ceilStart - iconR - gap);
+        d.left = { iconL - gap - d.oldLeftLen / 2, y, d.oldLeftLen / 2, 1 };
+        d.right = { iconR + gap, y, d.oldRightLen / 2, 1 };
+        return d;
+    }
 
     juce::Rectangle<int> trackBounds() const { return threshold.getBounds(); }
     juce::Rectangle<int> gutterBounds() const { return gutter; }
@@ -492,12 +506,16 @@ private:
         {
             const auto& t = currentTheme();
             g.setColour (on ? t.accent : t.textSecondary.withAlpha (0.45f));
-            const auto c = getLocalBounds().toFloat().getCentre();
-            const float lw = 8.5f, lh = 5.5f, off = 2.6f;
+            // Icon sits in the bottom 16 px row (level with THRESHOLD/CEILING); caption above it.
+            g.setFont (metrics::smallFont());
+            g.drawText ("LINK", getLocalBounds().withHeight (getHeight() - 16), juce::Justification::centred);
+            auto c = getLocalBounds().toFloat().getCentre();
+            c.y = (float) getHeight() - 8.0f;
+            const float lw = 11.0f, lh = 7.2f, off = 3.4f;
             juce::Path p;
             p.addRoundedRectangle (c.x - off - lw * 0.5f, c.y - lh * 0.5f, lw, lh, lh * 0.5f);
             p.addRoundedRectangle (c.x + off - lw * 0.5f, c.y - lh * 0.5f, lw, lh, lh * 0.5f);
-            g.strokePath (p, juce::PathStrokeType (1.3f));
+            g.strokePath (p, juce::PathStrokeType (1.5f));
         }
         void mouseUp (const juce::MouseEvent& e) override
         {
