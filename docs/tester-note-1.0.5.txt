@@ -2,17 +2,21 @@ SPAStrip 1.0.5
 
 My dudes,
 
-This one is about reverb level, a GLITTER fix and a shared preset browser update. SPASynth and SPAGlitch get the same effects.
+This one brings SPAStrip's first factory presets, plus reverb level, a GLITTER fix and a shared preset browser update. SPASynth and SPAGlitch get the same effects.
 
 CHANGES THAT ARE ON PURPOSE (please don't report these as bugs)
 - Reverb is 8 dB quieter in every mode, so MIX has usable travel and
-  equal wet and dry now sits near the middle of the knob. Factory
-  presets were rebalanced to sound the same. Your own sessions with
-  reverb will sound drier at the same MIX.
+  equal wet and dry now sits near the middle of the knob. Your own
+  sessions with reverb will sound drier at the same MIX.
 - With GLITTER RELEASE on, POSITION has a minimum of 8 ms.
 - Export is not available in demo mode.
 
 WHAT'S NEW
+- 72 factory presets, six for each of twelve types: Drums, Bass, Vocals,
+  Guitar, Keys, Synth, FX, Mixbus, Mastering, Creative, Ambient and
+  Lo-Fi. Find them in the preset browser under Factory. Everything except
+  Mastering keeps its level close to what you send in.
+- Ambient and Lo-Fi are new types for your own presets too.
 - GLITTER RELEASE can no longer run away into endless feedback, and its
   time matches the knob across SPR TIME and POSITION.
 - The GLITTER display shows pitch spread vertically and timing spread
@@ -20,7 +24,8 @@ WHAT'S NEW
 - Preset browser: an x in the search box clears it (Esc clears too).
   Select several presets, right-click Export, and they are saved as
   separate files with one replace/skip question and one summary.
-- The LIMIT panel's link control is bigger, has a LINK label, and responds to clicks reliably.
+- The LIMIT panel's link control is bigger, has a LINK label, and
+  responds to clicks reliably.
 
 INSTALL
 1. Quit your DAW first (the Mac installer will ask you to if Logic,
@@ -31,15 +36,18 @@ INSTALL
    Selection, then restart Logic.
 
 PLEASE TEST (A/B against 1.0.4 where you can)
-4. Reverb: in every mode, sweep MIX. Is there useful travel, and does
-   equal wet/dry feel near the middle? Do factory presets still sound
-   like they did? Open an old session with reverb.
-5. GLITTER: turn RELEASE on and try long settings with SPR TIME and
+4. Factory presets: these are a first draft and need your ears most of
+   all. Run them on the material they are named for (vocals on vocals,
+   drums on drums...). Which ones work, which miss, and what would you
+   change? Is the level jump between bypass and preset comfortable?
+5. Reverb: in every mode, sweep MIX. Is there useful travel, and does
+   equal wet/dry feel near the middle? Open an old session with reverb.
+6. GLITTER: turn RELEASE on and try long settings with SPR TIME and
    POSITION moving. Does it ever run away or build up? Does the display
    read pitch vertically and timing horizontally?
-6. Preset browser: clear the search with the x and with Esc. Select
+7. Preset browser: clear the search with the x and with Esc. Select
    several presets, right-click Export, check the files and the summary.
    Your existing presets and favourites should all still be there.
-7. LIMIT panel: is the LINK control easy to spot? Click it repeatedly.
+8. LIMIT panel: is the LINK control easy to spot? Click it repeatedly.
 
 Anything odd, send me the preset and what you were doing.

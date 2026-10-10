@@ -1,12 +1,9 @@
 # SPAStrip changelog
 
-## 1.0.6
+## 1.0.5
 
 - SPAStrip now ships with 72 factory presets, six for each of twelve types: Drums, Bass, Vocals, Guitar, Keys, Synth, FX, Mixbus, Mastering, Creative, Ambient and Lo-Fi. They are in the preset browser under Factory, and every one except the Mastering presets keeps its level close to what you send in.
 - Ambient and Lo-Fi are new types for your own presets too.
-
-## 1.0.5
-
 - Reverb is 8 dB quieter in every mode, so MIX now has usable travel and equal wet and dry sits near the middle of the knob. Your existing sessions with reverb will sound drier at the same MIX, so turn it up a little.
 - GLITTER's RELEASE can no longer run away into endless feedback, and its time now matches the knob across SPR TIME and POSITION. With RELEASE on, POSITION has a minimum of 8 ms. The GLITTER display now shows pitch spread vertically and timing spread horizontally.
 - The preset browser's search box has an x to clear it (Esc clears it too). You can select several presets and right-click Export to save them all as separate files, with one replace-or-skip question and one summary. Export is not available in demo mode.
