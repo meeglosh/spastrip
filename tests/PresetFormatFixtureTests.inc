@@ -81,9 +81,42 @@ namespace presetFixtureTests
 
     // Byte-for-byte comparison; on a mismatch the message carries the first differing
     // offset and ~60 characters of context from both sides.
+    // Fixtures were written on macOS. Other platforms' float maths can round a parameter's
+    // value differently in the last bits (e.g. a zero default saved as 3.576e-7 on macOS but
+    // 0.0 on Windows), so off macOS the two are also accepted when they differ ONLY in
+    // value="..." numbers that agree within 1e-6. macOS stays strictly byte-for-byte.
+    bool equalUpToFloatNoise (const juce::String& a, const juce::String& b)
+    {
+        int i = 0, j = 0;
+        const juce::String key ("value=\"");
+        while (i < a.length() && j < b.length())
+        {
+            if (a.substring (i).startsWith (key) && b.substring (j).startsWith (key))
+            {
+                i += key.length(); j += key.length();
+                const int ei = a.indexOfChar (i, '"'), ej = b.indexOfChar (j, '"');
+                if (ei < 0 || ej < 0) return false;
+                const auto va = a.substring (i, ei), vb = b.substring (j, ej);
+                if (va != vb)
+                {
+                    if (! va.containsOnly ("0123456789.-+eE") || ! vb.containsOnly ("0123456789.-+eE")) return false;
+                    if (std::abs (va.getDoubleValue() - vb.getDoubleValue()) > 1.0e-6) return false;
+                }
+                i = ei; j = ej;
+                continue;
+            }
+            if (a[i] != b[j]) return false;
+            ++i; ++j;
+        }
+        return i == a.length() && j == b.length();
+    }
+
     juce::String compareBytes (const juce::String& a, const juce::String& b)
     {
         if (a == b) return {};
+       #if ! JUCE_MAC
+        if (equalUpToFloatNoise (a, b)) return {};
+       #endif
         int i = 0;
         while (i < a.length() && i < b.length() && a[i] == b[i]) ++i;
         return " [first difference at offset " + juce::String (i) + ", lengths " + juce::String (a.length()) + " vs " + juce::String (b.length())
