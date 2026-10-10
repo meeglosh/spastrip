@@ -1,6 +1,6 @@
 # SPAStrip handoff
 
-**2026-10-10: 1.0.5 BUILT and staged (HEAD 399d770), NOT sent.** dist/shopify/SPAStrip-1.0.5/ (and dist/installers/): SPAStrip-1.0.5-macOS.pkg signed + notarized + stapled, spctl accepted, universal, minos 11.0, bundle versions 1.0.5, md5 `2071a4cf4631abf998eb14e04a41e64f`; SPAStrip-1.0.5-Windows.exe (CI run 38055134162, draft ci-windows-399d770) md5 `fb1d4de51b8086b06a577eadfcc8dda1`. Suite 170 tests ALL PASS (Release, first run, no flake).
+**2026-10-10: 1.0.5 REBUILT with the factory preset bank (HEAD c94c901), NOT sent.** dist/shopify/SPAStrip-1.0.5/ (and dist/installers/): SPAStrip-1.0.5-macOS.pkg signed + notarized + stapled, spctl accepted (Notarized Developer ID), universal, minos 11.0, bundle versions 1.0.5, md5 `76cec789c9b7b37c01f2fbc55d0ec100`; SPAStrip-1.0.5-Windows.exe (CI run 38059532447, draft ci-windows-c94c901) md5 `b629d78a94aba1b121645622f6e5514e`. Suite 174 test functions, 0 failed, ALL PASS (Release). Supersedes the earlier 399d770 build (pkg 2071a4cf..., exe fb1d4de5...).
 
 **2026-10-09: 1.0.4 SENT. 1.0.5 version bumped, changelog and tester note (docs/tester-note-1.0.5.txt) written; BUILT-PENDING (not built, not sent). Bump to 1.0.6 once sent.**
 
