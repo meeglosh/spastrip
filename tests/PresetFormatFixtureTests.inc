@@ -64,6 +64,32 @@ namespace presetFixtureTests
 
     juce::String bytes (const juce::File& f) { return f.loadFileAsString(); }
 
+    // Hex-escapes CR / LF and other control bytes so a mismatch can be read in a CI log.
+    juce::String escaped (const juce::String& s, int from, int len)
+    {
+        juce::String out;
+        for (int i = juce::jmax (0, from); i < juce::jmin (s.length(), from + len); ++i)
+        {
+            const auto c = s[i];
+            if (c == '\r') out << "\\r";
+            else if (c == '\n') out << "\\n";
+            else if (c < 32 || c > 126) out << "\\x" << juce::String::toHexString ((int) c);
+            else out << juce::String::charToString (c);
+        }
+        return out;
+    }
+
+    // Byte-for-byte comparison; on a mismatch the message carries the first differing
+    // offset and ~60 characters of context from both sides.
+    juce::String compareBytes (const juce::String& a, const juce::String& b)
+    {
+        if (a == b) return {};
+        int i = 0;
+        while (i < a.length() && i < b.length() && a[i] == b[i]) ++i;
+        return " [first difference at offset " + juce::String (i) + ", lengths " + juce::String (a.length()) + " vs " + juce::String (b.length())
+               + "; saved: ..." + escaped (a, i - 30, 60) + "... fixture: ..." + escaped (b, i - 30, 60) + "...]";
+    }
+
     juce::StringArray zipEntries (const juce::File& zip)
     {
         juce::ZipFile z (zip);
@@ -151,8 +177,8 @@ namespace presetFixtureTests
                 const auto res = pm.save (r.name, r.folder, false, r.type);
                 expect (res.ok, juce::String ("save ") + r.name);
                 expect (res.file == fixtureFile (t.dir, r.folder, r.name), juce::String (r.name) + ": lands in User/<folder>/<name>.spastrip");
-                expect (bytes (res.file) == bytes (fixtureFile (fixtures, r.folder, r.name)),
-                        juce::String (r.name) + ": the saved file is byte-identical to the fixture");
+                const auto diff = compareBytes (bytes (res.file), bytes (fixtureFile (fixtures, r.folder, r.name)));
+                expect (diff.isEmpty(), juce::String (r.name) + ": the saved file is byte-identical to the fixture" + diff);
             }
         }
 
@@ -237,7 +263,9 @@ namespace presetFixtureTests
             const auto file = fileOf (pm, name);
             const auto before = bytes (file);
             expect (pm.load (file).ok, juce::String (name) + ": loads");
-            expect (pm.saveInPlace (file).ok && bytes (file) == before, juce::String (name) + ": load then save in place is byte-identical (stored type kept)");
+            const auto saved = pm.saveInPlace (file).ok;
+            const auto diff = compareBytes (bytes (file), before);
+            expect (saved && diff.isEmpty(), juce::String (name) + ": load then save in place is byte-identical (stored type kept)" + diff);
         }
 
         // --- EXPORT: verbatim copy of the file; a folder zips with paths relative to that folder.
