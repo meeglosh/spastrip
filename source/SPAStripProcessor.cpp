@@ -308,6 +308,7 @@ SPAStripProcessor::SPAStripProcessor()
 
     // Constructed last: it captures the pristine state as the "Init" baseline.
     presetManager = std::make_unique<preset::PresetManager> (*this);
+    presetManager->installFactoryBank();   // the 72 factory presets, embedded (read-only, under "Factory")
     midiLearn = std::make_unique<MidiLearnManager> (apvts);
 
 #if SPASTRIP_HAS_SPA_LICENSING

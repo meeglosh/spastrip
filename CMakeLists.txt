@@ -217,6 +217,8 @@ set(SPASTRIP_SOURCES
     source/MidiLearn.cpp
     source/params/Randomizer.cpp
     source/presets/PresetManager.cpp
+    source/presets/FactoryBank.cpp
+    source/presets/FactoryBankTable.cpp
     source/params/ParameterRegistry.cpp
     source/mod/ModTargets.cpp
     source/ir/FactoryIRs.cpp

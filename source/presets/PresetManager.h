@@ -33,7 +33,7 @@ namespace spa::preset
 //   macOS ~/Library/Application Support/..., Windows %APPDATA%\... A type is an
 //   attribute, a folder is the user's own filing -- the two are independent axes.
 // The effect-oriented TYPES: Drums, Bass, Vocals, Guitar, Keys, Synth, FX, Mixbus,
-// Mastering, Creative (one per preset; "Other" lists the untyped).
+// Mastering, Creative, Ambient, Lo-Fi (one per preset; "Other" lists the untyped).
 class PresetManager : public spa::presets::PresetManager
 {
 public:
@@ -52,6 +52,13 @@ public:
     static juce::String canonicalType (const juce::String& stored);
 
     explicit PresetManager (SPAStripProcessor&);
+
+    // The 72 factory presets (FactoryBank.h), listed read-only under "Factory". The processor
+    // installs them once it has built this manager. Test seam: with the bank disabled
+    // (tests main does this, so the browser-model tests keep their exact counts) the call
+    // installs nothing; the factory-bank tests turn it back on.
+    void installFactoryBank();
+    static void setFactoryBankEnabled (bool enabled);
 
     static juce::File defaultPresetsRoot();
     // Test seam: used by every PresetManager constructed afterwards (a hermetic

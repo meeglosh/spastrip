@@ -1,6 +1,7 @@
 #include "PresetManager.h"
 
 #include "../ui/UiSettings.h"
+#include "FactoryBank.h"
 
 namespace spa::preset
 {
@@ -17,7 +18,10 @@ namespace
 const juce::StringArray& PresetManager::presetTypes()
 {
     static const juce::StringArray types { "Drums", "Bass", "Vocals", "Guitar", "Keys",
-                                           "Synth", "FX", "Mixbus", "Mastering", "Creative" };
+                                           "Synth", "FX", "Mixbus", "Mastering", "Creative",
+                                           // Appended (1.0.6): the order is the browser's group order and
+                                           // stored types of existing user presets must keep resolving.
+                                           "Ambient", "Lo-Fi" };
     return types;
 }
 
@@ -98,6 +102,25 @@ spa::presets::Adapter PresetManager::makeAdapter (SPAStripProcessor& p)
 }
 
 PresetManager::PresetManager (SPAStripProcessor& p) : spa::presets::PresetManager (makeAdapter (p)) {}
+
+namespace
+{
+    bool& factoryBankEnabledFlag()
+    {
+        static bool enabled = true;
+        return enabled;
+    }
+}
+
+void PresetManager::setFactoryBankEnabled (bool enabled)
+{
+    factoryBankEnabledFlag() = enabled;
+}
+
+void PresetManager::installFactoryBank()
+{
+    setFactoryPresets (factoryBankEnabledFlag() ? buildFactoryBank() : std::vector<FactoryPreset>());   // rescans
+}
 
 PresetContext PresetManager::captureContext() const
 {

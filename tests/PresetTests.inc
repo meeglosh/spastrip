@@ -103,8 +103,8 @@ namespace presetTests
         auto proc = makeIsolated (t);
         auto& pm = proc->getPresetManager();
 
-        expect (PM::presetTypes() == juce::StringArray ({ "Drums", "Bass", "Vocals", "Guitar", "Keys", "Synth", "FX", "Mixbus", "Mastering", "Creative" }),
-                "the types are Drums, Bass, Vocals, Guitar, Keys, Synth, FX, Mixbus, Mastering, Creative, in that order");
+        expect (PM::presetTypes() == juce::StringArray ({ "Drums", "Bass", "Vocals", "Guitar", "Keys", "Synth", "FX", "Mixbus", "Mastering", "Creative", "Ambient", "Lo-Fi" }),
+                "the types are Drums, Bass, Vocals, Guitar, Keys, Synth, FX, Mixbus, Mastering, Creative, Ambient, Lo-Fi, in that order (new ones appended)");
         expect (PM::canonicalType ("  mIXbus ") == "Mixbus" && PM::canonicalType ("fx") == "FX" && PM::canonicalType ("Dubstep").isEmpty()
                     && PM::canonicalType ("").isEmpty() && PM::canonicalType ("Other").isEmpty(),
                 "canonicalType: case-insensitive and trimmed; empty / unknown / 'Other' -> untyped");
@@ -798,7 +798,7 @@ namespace presetTests
         {
             juce::StringArray types;
             for (int i = 0; i < d->getTypeBox().getNumItems(); ++i) types.add (d->getTypeBox().getItemText (i));
-            expect (types.joinIntoString (",") == "(none),Drums,Bass,Vocals,Guitar,Keys,Synth,FX,Mixbus,Mastering,Creative", "TYPE: " + types.joinIntoString (","));
+            expect (types.joinIntoString (",") == "(none),Drums,Bass,Vocals,Guitar,Keys,Synth,FX,Mixbus,Mastering,Creative,Ambient,Lo-Fi", "TYPE: " + types.joinIntoString (","));
             expect (d->getFolderBox().getItemText (0) == "User (unfiled)" && select (d->getFolderBox(), "Auto (by type)") && select (d->getFolderBox(), "New folder...") && select (d->getFolderBox(), "User (unfiled)"),
                     "FOLDER: User (unfiled), Auto (by type), New folder...");
         }

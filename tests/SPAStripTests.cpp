@@ -27,6 +27,7 @@
 #include "params/ParameterRegistry.h"
 #include "mod/ModTargets.h"
 #include "presets/PresetManager.h"
+#include "presets/FactoryBank.h"
 #include "ui/SPAStripEditor.h"
 #include "ui/FilterPanel.h"
 #include "ui/LimiterDisplay.h"
@@ -1319,6 +1320,7 @@ namespace
 #include "Phase2bTests.inc"
 #include "Phase3Tests.inc"
 #include "PresetTests.inc"
+#include "FactoryBankTests.inc"
 #include "PresetFormatFixtureTests.inc"
 #include "PresetBrowserFeatureTests.inc"
 #include "FilterTests.inc"
@@ -1378,6 +1380,24 @@ int main (int argc, char** argv)
     spa::preset::PresetManager::setPresetsRootOverride (testPresetsRoot);
     // The accent setting too (a hermetic file, never the user's own).
     spa::ui::settings::setSettingsFileOverride (testPresetsRoot.getSiblingFile (testPresetsRoot.getFileName() + "-settings.xml"));
+    // The 72 embedded factory presets are off for the whole suite so the browser-model tests keep their
+    // exact counts; the factoryBankTests turn them on for themselves and off again.
+    spa::preset::PresetManager::setFactoryBankEnabled (false);
+
+    // `SPAStripTests --render-factory-presets [report.md]`: the factory bank's loudness table / audition report.
+    if (argc >= 2 && juce::String (argv[1]) == "--render-factory-presets")
+    {
+        factoryBankTests::renderReport (argc >= 3 ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]) : juce::File());
+        testPresetsRoot.deleteRecursively();
+        return 0;
+    }
+
+    if (argc >= 3 && juce::String (argv[1]) == "--render-recipe")
+    {
+        factoryBankTests::renderRecipe (argv[2]);
+        testPresetsRoot.deleteRecursively();
+        return 0;
+    }
 
     // `SPAStripTests --ui-only` runs just the editor tests (phase 3 + the preset drawer / save panel; quick; used with `leaks --atExit`).
     const bool uiOnly = argc >= 2 && juce::String (argv[1]) == "--ui-only";
@@ -1564,6 +1584,10 @@ int main (int argc, char** argv)
 
     // --- Preset management: types, folders, drawer, save panel, export / import ----
     RUN (presetTests::presetTypeRoundTripTest);
+    RUN (factoryBankTests::factoryBankListingTest);
+    RUN (factoryBankTests::factoryBankLoadTest);
+    RUN (factoryBankTests::factoryBankUserPresetsTest);
+    RUN (factoryBankTests::factoryBankRenderTest);
     RUN (presetTests::presetFolderLayoutTest);
     RUN (presetTests::presetBrowserModelTest);
     RUN (presetTests::presetBrowserUiTest);
